@@ -165,11 +165,12 @@ const CreateListing = () => {
             .from('listings')
             .getPublicUrl(fileName);
 
-          await supabase.from('listing_images').insert({
-            listing_id: listing.id,
-            url: publicUrl,
-            is_main: i === 0
-          });
+await supabase.from('listing_images').insert({
+  listing_id: listing.id,
+  user_id: user.id,
+  url: publicUrl,
+  is_main: i === 0
+});
         }
       }
 
