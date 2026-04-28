@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Category } from '../types/database';
-import { Camera, MapPin, AlertCircle, Loader2, ShieldAlert } from 'lucide-react';
-import { DEFAULT_CATEGORIES, POPULAR_CITIES } from '../constants/data';
+import { Camera, MapPin, AlertCircle, Loader2 } from 'lucide-react';
+import { POPULAR_CITIES } from '../constants/data';
 import { validateListingText, validateImage, preventDoubleClick } from '../utils/clientValidation';
 import { logSecurityEvent } from '../utils/logger';
+
+const DRAFT_KEY = 'vruki_create_listing_draft';
 
 const CreateListing = () => {
   const { user } = useAuth();
@@ -16,15 +18,31 @@ const CreateListing = () => {
   const [error, setError] = useState<string | null>(null);
   const [catLoading, setCatLoading] = useState(true);
   
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    price: '',
-    category_id: '',
-    city: 'Москва', // Default city
+  const [formData, setFormData] = useState(() => {
+    const saved = localStorage.getItem(DRAFT_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing draft:', e);
+      }
+    }
+    return {
+      title: '',
+      description: '',
+      price: '',
+      category_id: '',
+      city: 'Москва',
+    };
   });
+
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+
+  // Save draft to localStorage when formData changes
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(formData));
+  }, [formData]);
 
   useEffect(() => {
     if (!user) {
@@ -77,14 +95,14 @@ const CreateListing = () => {
   };
 
   const removeImage = (index: number) => {
-    const newImages = [...images];
-    newImages.splice(index, 1);
-    setImages(newImages);
+    const newImgArr = [...images];
+    newImgArr.splice(index, 1);
+    setImages(newImgArr);
 
-    const newPreviews = [...previews];
-    URL.revokeObjectURL(newPreviews[index]);
-    newPreviews.splice(index, 1);
-    setPreviews(newPreviews);
+    const newPreviewArr = [...previews];
+    URL.revokeObjectURL(newPreviewArr[index]);
+    newPreviewArr.splice(index, 1);
+    setPreviews(newPreviewArr);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -175,23 +193,25 @@ const CreateListing = () => {
               .from('listings')
               .getPublicUrl(fileName);
 
-await supabase.from('listing_images').insert({
-  listing_id: listing.id,
-  user_id: user.id,
-  url: publicUrl,
-  is_main: i === 0
-});
+            const { error: imgInsertError } = await supabase.from('listing_images').insert({
+              listing_id: listing.id,
+              user_id: user.id,
+              url: publicUrl,
+              is_main: i === 0
+            });
 
             if (imgInsertError) throw imgInsertError;
           }
         } catch (imgErr) {
-          // If image logic fails, delete the partially created listing to avoid ghost listings/duplicates
           if (createdListingId) {
             await supabase.from('listings').delete().eq('id', createdListingId).eq('user_id', user.id);
           }
           throw new Error('Не удалось загрузить фото. Объявление не создано, попробуйте ещё раз.');
         }
       }
+
+      // 7. Clear draft on success
+      localStorage.removeItem(DRAFT_KEY);
 
       navigate('/my-listings');
     } catch (err: any) {
@@ -203,7 +223,7 @@ await supabase.from('listing_images').insert({
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">Новое объявление</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-8 text-center">Новое объявление</h1>
       
       {error && (
         <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-600">
@@ -212,16 +232,16 @@ await supabase.from('listing_images').insert({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8 bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
+      <form onSubmit={handleSubmit} className="space-y-8 bg-white dark:bg-gray-900 p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-800">Общая информация</h2>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Общая информация</h2>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Название объявления*</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название объявления*</label>
             <input
               type="text"
               required
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
               placeholder="Например, iPhone 13 128GB"
               value={formData.title}
               onChange={e => setFormData({...formData, title: e.target.value})}
@@ -256,12 +276,12 @@ await supabase.from('listing_images').insert({
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Цена (₽)*</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Цена (₽)*</label>
               <input
                 type="number"
                 required
                 min="0"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
                 placeholder="0"
                 value={formData.price}
                 onChange={e => setFormData({...formData, price: e.target.value})}
@@ -270,11 +290,11 @@ await supabase.from('listing_images').insert({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Описание*</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание*</label>
             <textarea
               required
               rows={5}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white resize-none"
               placeholder="Опишите ваш товар или услугу..."
               value={formData.description}
               onChange={e => setFormData({...formData, description: e.target.value})}
@@ -282,12 +302,12 @@ await supabase.from('listing_images').insert({
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Город*</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Город*</label>
             <div className="relative">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <select
                 required
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white dark:bg-gray-800 dark:text-white"
                 value={formData.city}
                 onChange={e => setFormData({...formData, city: e.target.value})}
               >
@@ -299,11 +319,11 @@ await supabase.from('listing_images').insert({
           </div>
         </div>
 
-        <div className="space-y-4 border-t pt-8">
-<h2 className="text-xl font-semibold text-gray-800">Фотографии*</h2>
-<p className="text-sm text-gray-500">
-  Добавьте хотя бы одно фото. Первое фото будет на обложке. Максимум 10 штук.
-</p>
+        <div className="space-y-4 border-t dark:border-gray-800 pt-8">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Фотографии*</h2>
+          <p className="text-sm text-gray-500">
+            Добавьте хотя бы одно фото. Первое фото будет на обложке. Максимум 10 штук.
+          </p>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {previews.map((preview, index) => (
@@ -327,9 +347,9 @@ await supabase.from('listing_images').insert({
             ))}
             
             {previews.length < 10 && (
-              <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all text-gray-400 hover:text-blue-500">
+              <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all text-gray-400 hover:text-blue-500">
                 <Camera className="w-8 h-8" />
-                <span className="text-xs font-medium">Добавить фото*</span>
+                <span className="text-xs font-medium text-center px-2">Добавить фото*</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -340,9 +360,12 @@ await supabase.from('listing_images').insert({
               </label>
             )}
           </div>
+          <p className="text-xs text-amber-600 font-medium">
+            ⚠️ При обновлении страницы фотографии нужно выбрать заново.
+          </p>
         </div>
 
-        <div className="border-t pt-8">
+        <div className="border-t dark:border-gray-800 pt-8">
           <button
             type="submit"
             disabled={loading}
