@@ -107,6 +107,8 @@ const CreateListing = () => {
     setLoading(true);
     setError(null);
 
+    let createdListingId: string | null = null;
+
     try {
       // 3. Check Account Limits (Max 20 total)
       const { count: totalCount } = await supabase
@@ -147,30 +149,40 @@ const CreateListing = () => {
         .single();
 
       if (listingError) throw listingError;
+      createdListingId = listing.id;
 
       // 2. Upload Images
       if (images.length > 0) {
-        for (let i = 0; i < images.length; i++) {
-          const file = images[i];
-          const fileExt = file.name.split('.').pop();
-          const fileName = `${listing.id}/${Math.random()}.${fileExt}`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from('listings')
-            .upload(fileName, file);
+        try {
+          for (let i = 0; i < images.length; i++) {
+            const file = images[i];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${listing.id}/${Math.random()}.${fileExt}`;
+            
+            const { error: uploadError } = await supabase.storage
+              .from('listings')
+              .upload(fileName, file);
 
-          if (uploadError) throw uploadError;
+            if (uploadError) throw uploadError;
 
-          const { data: { publicUrl } } = supabase.storage
-            .from('listings')
-            .getPublicUrl(fileName);
+            const { data: { publicUrl } } = supabase.storage
+              .from('listings')
+              .getPublicUrl(fileName);
 
-await supabase.from('listing_images').insert({
-  listing_id: listing.id,
-  user_id: user.id,
-  url: publicUrl,
-  is_main: i === 0
-});
+            const { error: imgInsertError } = await supabase.from('listing_images').insert({
+              listing_id: listing.id,
+              url: publicUrl,
+              is_main: i === 0
+            });
+
+            if (imgInsertError) throw imgInsertError;
+          }
+        } catch (imgErr) {
+          // If image logic fails, delete the partially created listing to avoid ghost listings/duplicates
+          if (createdListingId) {
+            await supabase.from('listings').delete().eq('id', createdListingId).eq('user_id', user.id);
+          }
+          throw new Error('Не удалось загрузить фото. Объявление не создано, попробуйте ещё раз.');
         }
       }
 
