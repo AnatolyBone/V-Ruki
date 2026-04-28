@@ -13,64 +13,99 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const withTimeout = async <T,>(promise: Promise<T>, ms = 5000): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Request timeout after ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-const fetchProfile = async (userId: string): Promise<Profile | null> => {
-  try {
-    console.log('[Auth] Fetch profile');
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+    try {
+      console.log('[Auth] Fetch profile');
+      console.log('[Auth] profile query started');
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+      const { data, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(),
+        5000
+      );
 
-    if (error) {
-      console.error('[Auth] Profile fetch error:', error);
+      console.log('[Auth] profile query finished');
+
+      if (error) {
+        console.error('[Auth] Profile fetch error:', error);
+        setProfile(null);
+        return null;
+      }
+
+      if (data) {
+        console.log('[Auth] Profile found');
+        setProfile(data);
+        return data;
+      }
+
+      console.warn('[Auth] Profile not found, creating...');
+
+      const { data: userData, error: userError } = await withTimeout(
+        supabase.auth.getUser(),
+        5000
+      );
+
+      if (userError) {
+        console.error('[Auth] Get user error:', userError);
+        setProfile(null);
+        return null;
+      }
+
+      const email = userData.user?.email ?? null;
+
+      const { data: createdProfile, error: createError } = await withTimeout(
+        supabase
+          .from('profiles')
+          .insert({
+            id: userId,
+            email,
+            role: 'user',
+            is_blocked: false,
+          })
+          .select('*')
+          .single(),
+        5000
+      );
+
+      if (createError) {
+        console.error('[Auth] Profile create error:', createError);
+        setProfile(null);
+        return null;
+      }
+
+      console.log('[Auth] Profile created');
+      setProfile(createdProfile);
+      return createdProfile;
+    } catch (err) {
+      console.error('[Auth] Unexpected profile error:', err);
       setProfile(null);
       return null;
     }
-
-    if (data) {
-      setProfile(data);
-      return data;
-    }
-
-    console.warn('[Auth] Profile not found, creating...');
-
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? null;
-
-    const { data: createdProfile, error: createError } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        email,
-        role: 'user',
-        is_blocked: false,
-      })
-      .select('*')
-      .single();
-
-    if (createError) {
-      console.error('[Auth] Profile create error:', createError);
-      setProfile(null);
-      return null;
-    }
-
-    setProfile(createdProfile);
-    return createdProfile;
-  } catch (err) {
-    console.error('[Auth] Unexpected profile error:', err);
-    setProfile(null);
-    return null;
-  }
-};
+  };
 
   const refreshProfile = async () => {
     if (!user) {
@@ -89,7 +124,7 @@ const fetchProfile = async (userId: string): Promise<Profile | null> => {
       setLoading(true);
 
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await withTimeout(supabase.auth.getSession(), 5000);
 
         if (error) {
           console.error('[Auth] Session error:', error);
@@ -134,31 +169,32 @@ const fetchProfile = async (userId: string): Promise<Profile | null> => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[Auth] Auth state changed:', event);
 
-      try {
-        if (!mounted) return;
+      if (!mounted) return;
 
-        if (!session?.user) {
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-          return;
-        }
-
-        setUser(session.user);
-        await fetchProfile(session.user.id);
-      } catch (err) {
-        console.error('[Auth] Auth state change error:', err);
-
-        if (!mounted) return;
+      if (!session?.user) {
+        setUser(null);
         setProfile(null);
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        setLoading(false);
+        return;
       }
+
+      setUser(session.user);
+
+      setTimeout(async () => {
+        try {
+          await fetchProfile(session.user.id);
+        } catch (err) {
+          console.error('[Auth] Auth state profile fetch error:', err);
+          setProfile(null);
+        } finally {
+          if (mounted) {
+            setLoading(false);
+          }
+        }
+      }, 0);
     });
 
     return () => {
@@ -170,7 +206,8 @@ const fetchProfile = async (userId: string): Promise<Profile | null> => {
   const signOut = async () => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signOut();
+
+      const { error } = await withTimeout(supabase.auth.signOut(), 5000);
 
       if (error) {
         console.error('[Auth] Sign out error:', error);
@@ -178,6 +215,8 @@ const fetchProfile = async (userId: string): Promise<Profile | null> => {
 
       setUser(null);
       setProfile(null);
+    } catch (err) {
+      console.error('[Auth] Sign out unexpected error:', err);
     } finally {
       setLoading(false);
     }
