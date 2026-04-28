@@ -145,6 +145,17 @@ const EditListing = () => {
       return;
     }
 
+    const totalImagesAfterSave = (existingImages.length - imagesToDelete.length) + newImages.length;
+    if (totalImagesAfterSave < 1) {
+      setError('Добавьте хотя бы одно фото объявления');
+      return;
+    }
+
+    if (totalImagesAfterSave > 10) {
+      setError('Максимум 10 фотографий');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
