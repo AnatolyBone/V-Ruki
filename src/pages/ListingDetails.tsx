@@ -17,12 +17,12 @@ const ListingDetails = () => {
       
       const { data, error } = await supabase
         .from('listings')
-        .select(`
-          *,
-          profiles (*),
-          categories (*),
-          listing_images (*)
-        `)
+.select(`
+  *,
+  profiles!listings_user_id_fkey (*),
+  categories (*),
+  listing_images (*)
+`)
         .eq('id', id)
         .single();
 
@@ -59,8 +59,8 @@ const ListingDetails = () => {
   );
 
   const images = listing.listing_images || [];
-  const seller = listing.profiles;
-
+const seller = (listing as any).profiles;
+  
   return (
     <div className="container mx-auto px-4 py-8 pb-20">
       {/* Breadcrumbs */}
