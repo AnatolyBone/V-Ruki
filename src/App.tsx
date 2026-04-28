@@ -18,6 +18,7 @@ import Messages from './pages/Messages';
 import AdminDashboard from './pages/AdminDashboard';
 import CategoryPage from './pages/CategoryPage';
 import MapSearch from './pages/MapSearch';
+import EditListing from './pages/EditListing';
 import * as Static from './pages/StaticPages';
 
 const AppContent = () => {
@@ -43,6 +44,7 @@ const AppContent = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/listing/:id" element={<ListingDetails />} />
+          <Route path="/listings/:id/edit" element={<EditListing />} />
           <Route path="/category/:slug" element={<CategoryPage />} />
           <Route path="/listings/new" element={<CreateListing />} />
           <Route path="/profile" element={<Profile />} />
