@@ -77,19 +77,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const email = userData.user?.email ?? null;
 
-      const { data: createdProfile, error: createError } = await withTimeout(
-        supabase
-          .from('profiles')
-          .insert({
-            id: userId,
-            email,
-            role: 'user',
-            is_blocked: false,
-          })
-          .select('*')
-          .single(),
-        5000
-      );
+const { data: createdProfile, error: createError } = await withTimeout(
+  supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: userId,
+        email,
+        role: 'user',
+        is_blocked: false,
+      },
+      { onConflict: 'id' }
+    )
+    .select('*')
+    .single(),
+  5000
+);
 
       if (createError) {
         console.error('[Auth] Profile create error:', createError);
