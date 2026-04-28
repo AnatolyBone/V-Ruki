@@ -10,6 +10,27 @@ const MyListings = () => {
   const navigate = useNavigate();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchMyListings = async () => {
+    if (!user) return;
+
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('listings')
+      .select('*, listing_images(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching listings:', error);
+    } else {
+      setListings(data as Listing[]);
+    }
+
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!user) {
@@ -17,23 +38,38 @@ const MyListings = () => {
       return;
     }
 
-    const fetchMyListings = async () => {
-      const { data, error } = await supabase
-        .from('listings')
-        .select('*, listing_images(*)')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching listings:', error);
-      } else {
-        setListings(data as Listing[]);
-      }
-      setLoading(false);
-    };
-
     fetchMyListings();
   }, [user, navigate]);
+
+  const handleEdit = (listingId: string) => {
+    navigate(`/listings/${listingId}/edit`);
+  };
+
+  const handleDelete = async (listingId: string) => {
+    if (!user) return;
+
+    const confirmed = window.confirm('Удалить объявление? Это действие нельзя отменить.');
+    if (!confirmed) return;
+
+    setDeletingId(listingId);
+
+    try {
+      const { error } = await supabase
+        .from('listings')
+        .delete()
+        .eq('id', listingId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setListings((prev) => prev.filter((item) => item.id !== listingId));
+    } catch (err: any) {
+      console.error('Error deleting listing:', err);
+      alert(err?.message || 'Не удалось удалить объявление');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -57,8 +93,8 @@ const MyListings = () => {
           <h1 className="text-3xl font-bold text-gray-900">Мои объявления</h1>
           <p className="text-gray-500">Управляйте вашими предложениями на ВРуки</p>
         </div>
-        <Link 
-          to="/listings/new" 
+        <Link
+          to="/listings/new"
           className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
         >
           <Plus className="w-5 h-5" />
@@ -127,10 +163,21 @@ const MyListings = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Редактировать">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(listing.id)}
+                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          title="Редактировать"
+                        >
                           <Edit2 className="w-5 h-5" />
                         </button>
-                        <button className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Удалить">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(listing.id)}
+                          disabled={deletingId === listing.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
+                          title="Удалить"
+                        >
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
@@ -150,8 +197,8 @@ const MyListings = () => {
           <p className="text-gray-500 mb-8 max-w-sm mx-auto">
             Самое время что-нибудь продать! Нажмите кнопку ниже, чтобы начать.
           </p>
-          <Link 
-            to="/listings/new" 
+          <Link
+            to="/listings/new"
             className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors"
           >
             Подать объявление
