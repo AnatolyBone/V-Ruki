@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Category, Listing } from '../types/database';
-import { MapPin, AlertCircle, Loader2, Save, ArrowLeft } from 'lucide-react';
+import { MapPin, AlertCircle, Loader2, Save, ArrowLeft, Camera, X, Trash2 } from 'lucide-react';
 import { POPULAR_CITIES } from '../constants/data';
-import { validateListingText, preventDoubleClick } from '../utils/clientValidation';
+import { validateListingText, preventDoubleClick, validateImage } from '../utils/clientValidation';
 import { logSecurityEvent } from '../utils/logger';
 
 const EditListing = () => {
@@ -18,6 +18,12 @@ const EditListing = () => {
   const [fetchLoading, setFetchLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Image states
+  const [existingImages, setExistingImages] = useState<any[]>([]);
+  const [newImages, setNewImages] = useState<File[]>([]);
+  const [newPreviews, setNewPreviews] = useState<string[]>([]);
+  const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -57,6 +63,15 @@ const EditListing = () => {
           return;
         }
 
+        // 4. Fetch existing images
+        const { data: imagesData } = await supabase
+          .from('listing_images')
+          .select('*')
+          .eq('listing_id', id)
+          .order('created_at', { ascending: true });
+
+        if (imagesData) setExistingImages(imagesData);
+
         setFormData({
           title: typedListing.title,
           description: typedListing.description,
@@ -74,6 +89,46 @@ const EditListing = () => {
 
     fetchData();
   }, [id, user, navigate]);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      const currentCount = existingImages.length - imagesToDelete.length + newImages.length;
+      
+      if (currentCount + files.length > 10) {
+        alert('Максимум 10 изображений суммарно');
+        return;
+      }
+
+      for (const file of files) {
+        const err = validateImage(file);
+        if (err) {
+          alert(err);
+          return;
+        }
+      }
+
+      setNewImages([...newImages, ...files]);
+      const previews = files.map(file => URL.createObjectURL(file));
+      setNewPreviews([...newPreviews, ...previews]);
+    }
+  };
+
+  const removeExistingImage = (imageId: string) => {
+    setImagesToDelete([...imagesToDelete, imageId]);
+  };
+
+  const removeNewImage = (index: number) => {
+    const images = [...newImages];
+    const previews = [...newPreviews];
+    
+    URL.revokeObjectURL(previews[index]);
+    images.splice(index, 1);
+    previews.splice(index, 1);
+    
+    setNewImages(images);
+    setNewPreviews(previews);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +149,7 @@ const EditListing = () => {
     setError(null);
 
     try {
+      // 1. Update listing
       const { error: updateError } = await supabase
         .from('listings')
         .update({
@@ -109,6 +165,44 @@ const EditListing = () => {
         .eq('user_id', user.id);
 
       if (updateError) throw updateError;
+
+      // 2. Delete removed images
+      if (imagesToDelete.length > 0) {
+        const { error: delError } = await supabase
+          .from('listing_images')
+          .delete()
+          .in('id', imagesToDelete);
+        if (delError) throw delError;
+      }
+
+      // 3. Upload new images
+      if (newImages.length > 0) {
+        for (const file of newImages) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${id}/${Math.random()}.${fileExt}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('listings')
+            .upload(fileName, file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('listings')
+            .getPublicUrl(fileName);
+
+          const { error: imgInsertError } = await supabase
+            .from('listing_images')
+            .insert({
+              listing_id: id,
+              user_id: user.id,
+              url: publicUrl,
+              is_main: false
+            });
+
+          if (imgInsertError) throw imgInsertError;
+        }
+      }
 
       navigate('/my-listings');
     } catch (err: any) {
@@ -213,6 +307,60 @@ const EditListing = () => {
                 ))}
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Photo Section */}
+        <div className="space-y-4 border-t dark:border-gray-800 pt-8">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Фотографии</h2>
+          <p className="text-sm text-gray-500">Максимум 10 штук суммарно.</p>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {/* Existing Images */}
+            {existingImages
+              .filter(img => !imagesToDelete.includes(img.id))
+              .map((img) => (
+                <div key={img.id} className="relative aspect-square rounded-xl overflow-hidden group">
+                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeExistingImage(img.id)}
+                    className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+
+            {/* New Previews */}
+            {newPreviews.map((preview, index) => (
+              <div key={`new-${index}`} className="relative aspect-square rounded-xl overflow-hidden group border-2 border-blue-200">
+                <img src={preview} alt="New Preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeNewImage(index)}
+                  className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="absolute bottom-0 left-0 right-0 bg-blue-600 text-[10px] text-white text-center py-0.5">Новое</div>
+              </div>
+            ))}
+            
+            {/* Add Button */}
+            {(existingImages.length - imagesToDelete.length + newImages.length) < 10 && (
+              <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all text-gray-400 hover:text-blue-500">
+                <Camera className="w-8 h-8" />
+                <span className="text-xs font-medium">Добавить фото</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+              </label>
+            )}
           </div>
         </div>
 
