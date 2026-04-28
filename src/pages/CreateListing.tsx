@@ -299,8 +299,10 @@ const CreateListing = () => {
         </div>
 
         <div className="space-y-4 border-t pt-8">
-          <h2 className="text-xl font-semibold text-gray-800">Фотографии</h2>
-          <p className="text-sm text-gray-500">Первое фото будет на обложке. Максимум 10 штук.</p>
+<h2 className="text-xl font-semibold text-gray-800">Фотографии*</h2>
+<p className="text-sm text-gray-500">
+  Добавьте хотя бы одно фото. Первое фото будет на обложке. Максимум 10 штук.
+</p>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {previews.map((preview, index) => (
@@ -326,7 +328,7 @@ const CreateListing = () => {
             {previews.length < 10 && (
               <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all text-gray-400 hover:text-blue-500">
                 <Camera className="w-8 h-8" />
-                <span className="text-xs font-medium">Добавить фото</span>
+                <span className="text-xs font-medium">Добавить фото*</span>
                 <input
                   type="file"
                   accept="image/*"
