@@ -20,53 +20,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`[Auth] Fetch profile attempt ${attempt}`);
+const fetchProfile = async (userId: string): Promise<Profile | null> => {
+  try {
+    console.log('[Auth] Fetch profile');
 
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
-        if (error) {
-          console.error('[Auth] Profile fetch error:', error);
-
-          if (attempt < 3) {
-            await sleep(700);
-            continue;
-          }
-
-          setProfile(null);
-          return null;
-        }
-
-        if (!data) {
-          console.warn('[Auth] Profile not found');
-          setProfile(null);
-          return null;
-        }
-
-        setProfile(data);
-        return data;
-      } catch (err) {
-        console.error('[Auth] Unexpected profile fetch error:', err);
-
-        if (attempt < 3) {
-          await sleep(700);
-          continue;
-        }
-
-        setProfile(null);
-        return null;
-      }
+    if (error) {
+      console.error('[Auth] Profile fetch error:', error);
+      setProfile(null);
+      return null;
     }
 
+    if (data) {
+      setProfile(data);
+      return data;
+    }
+
+    console.warn('[Auth] Profile not found, creating...');
+
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData.user?.email ?? null;
+
+    const { data: createdProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email,
+        role: 'user',
+        is_blocked: false,
+      })
+      .select('*')
+      .single();
+
+    if (createError) {
+      console.error('[Auth] Profile create error:', createError);
+      setProfile(null);
+      return null;
+    }
+
+    setProfile(createdProfile);
+    return createdProfile;
+  } catch (err) {
+    console.error('[Auth] Unexpected profile error:', err);
     setProfile(null);
     return null;
-  };
+  }
+};
 
   const refreshProfile = async () => {
     if (!user) {
