@@ -104,6 +104,12 @@ const CreateListing = () => {
       return;
     }
 
+    // 2.1 Photo Validation
+    if (images.length < 1) {
+      setError('Добавьте хотя бы одно фото объявления');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
