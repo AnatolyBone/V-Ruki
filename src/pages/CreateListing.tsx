@@ -14,6 +14,7 @@ const CreateListing = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catLoading, setCatLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -32,11 +33,20 @@ const CreateListing = () => {
     }
 
     const fetchCategories = async () => {
-      const { data } = await supabase.from('categories').select('*').order('name');
-      if (data && data.length > 0) {
-        setCategories(data);
-      } else {
-        setCategories(DEFAULT_CATEGORIES as any);
+      setCatLoading(true);
+      try {
+        const { data, error } = await supabase.from('categories').select('*').order('name');
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setCategories(data);
+        } else {
+          setCategories([]);
+          console.warn('Categories table is empty in Supabase');
+        }
+      } catch (err) {
+        console.error('Error fetching categories:', err);
+      } finally {
+        setCatLoading(false);
       }
     };
 
@@ -200,18 +210,30 @@ const CreateListing = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Категория*</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Категория*</label>
               <select
                 required
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
+                disabled={catLoading || categories.length === 0}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white dark:bg-gray-800 dark:text-white disabled:bg-gray-50 dark:disabled:bg-gray-900 transition-colors"
                 value={formData.category_id}
                 onChange={e => setFormData({...formData, category_id: e.target.value})}
               >
-                <option value="">Выберите категорию</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
+                {catLoading ? (
+                  <option value="">Загрузка категорий...</option>
+                ) : categories.length === 0 ? (
+                  <option value="">⚠️ Категории не загружены в БД</option>
+                ) : (
+                  <>
+                    <option value="">Выберите категорию</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </>
+                )}
               </select>
+              {!catLoading && categories.length === 0 && (
+                <p className="mt-1 text-xs text-red-500">Пожалуйста, добавьте категории в таблицу public.categories через Supabase SQL Editor.</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Цена (₽)*</label>
