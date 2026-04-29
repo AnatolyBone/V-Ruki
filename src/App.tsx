@@ -24,8 +24,8 @@ import EditListing from './pages/EditListing';
 import * as Static from './pages/StaticPages';
 
 const AppContent = () => {
-  const { loading } = useAuth();
-
+const { loading, profile } = useAuth();
+  
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-center p-4">
@@ -37,8 +37,20 @@ const AppContent = () => {
     );
   }
 
+  const isStaff = profile && ['owner', 'admin'].includes(profile.role);
+
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950 transition-colors duration-300">
+    <div className={`min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950 transition-colors duration-300 ${isStaff ? 'pt-8' : ''}`}>
+      {isStaff && (
+        <div className="w-full bg-black text-white text-xs py-1 px-4 flex justify-between items-center fixed top-0 left-0 z-50">
+          <div>👑 {profile.email} ({profile.role})</div>
+          <div className="flex gap-3">
+            <a href="/admin" className="hover:underline">Админка</a>
+            <button onClick={() => location.reload()} className="hover:underline">↻ Обновить</button>
+          </div>
+        </div>
+      )}
+
       <Header />
       <main className="flex-grow">
         <Routes>
