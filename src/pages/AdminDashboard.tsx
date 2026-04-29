@@ -19,7 +19,7 @@ if (canModerate) {
 
   const fetchModerationListings = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('listings')
       .select('*, profiles(*), listing_images(*)')
       .eq('status', 'moderation')
