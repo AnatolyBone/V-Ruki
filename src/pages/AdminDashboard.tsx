@@ -9,11 +9,12 @@ const AdminDashboard = () => {
   const { profile } = useAuth();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const canModerate = ['owner', 'admin', 'moderator'].includes(profile?.role || '');
 
   useEffect(() => {
-    if (profile?.role === 'admin' || profile?.role === 'moderator') {
-      fetchModerationListings();
-    }
+if (canModerate) {
+  fetchModerationListings();
+}
   }, [profile]);
 
   const fetchModerationListings = async () => {
@@ -41,8 +42,8 @@ const AdminDashboard = () => {
     }
   };
 
-  if (profile?.role !== 'admin' && profile?.role !== 'moderator') {
-    return (
+if (!canModerate) {
+  return (
       <div className="container mx-auto px-4 py-20 text-center">
         <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
         <h1 className="text-2xl font-bold">Доступ запрещен</h1>
