@@ -4,18 +4,24 @@ import { supabase } from '../lib/supabase';
 import { Listing, Category } from '../types/database';
 import ListingCard from '../components/ListingCard';
 import { Search, ChevronRight, MapPin, Map as MapIcon, Sparkles } from 'lucide-react';
-import { DEFAULT_CATEGORIES, POPULAR_CITIES } from '../constants/data';
+import { DEFAULT_CATEGORIES } from '../constants/data';
+import { Location } from '../types/database';
 
 const Home = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchCity, setSearchCity] = useState('');
+
+  // Filters state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedCity, setSelectedCity] = useState<string>('');
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locSearch, setLocSearch] = useState('');
+  const [showLocDropdown, setShowLocDropdown] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      
+    const fetchInitialData = async () => {
       // Fetch categories
       const { data: catData } = await supabase
         .from('categories')
@@ -25,24 +31,64 @@ const Home = () => {
       if (catData && catData.length > 0) {
         setCategories(catData);
       } else {
-        // Fallback to defaults if DB is empty
         setCategories(DEFAULT_CATEGORIES as any);
       }
+    };
+    fetchInitialData();
+  }, []);
 
-      // Fetch recent listings
-      const { data: listData } = await supabase
+  // Fetch listings with filters
+  useEffect(() => {
+    const fetchListings = async () => {
+      setLoading(true);
+      let query = supabase
         .from('listings')
         .select('*, listing_images(*)')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(8);
+        .eq('status', 'active');
 
-      if (listData) setListings(listData as Listing[]);
+      if (selectedCategoryId) {
+        query = query.eq('category_id', selectedCategoryId);
+      }
+
+      if (selectedCity) {
+        query = query.eq('city', selectedCity);
+      }
+
+      if (searchQuery) {
+        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!error && data) {
+        setListings(data as Listing[]);
+      }
       setLoading(false);
     };
 
-    fetchData();
-  }, []);
+    const timer = setTimeout(fetchListings, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedCategoryId, selectedCity]);
+
+  // Fetch locations for dropdown
+  useEffect(() => {
+    const fetchLocs = async () => {
+      if (locSearch.length < 2) {
+        setLocations([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('locations')
+        .select('*')
+        .ilike('name', `%${locSearch}%`)
+        .limit(5);
+      if (data) setLocations(data);
+    };
+    const timer = setTimeout(fetchLocs, 300);
+    return () => clearTimeout(timer);
+  }, [locSearch]);
 
   return (
     <div className="pb-20">
@@ -57,37 +103,61 @@ const Home = () => {
             Покупайте и продавайте вещи выгодно и быстро.
           </p>
           
-          <div className="max-w-3xl mx-auto bg-white p-2 rounded-2xl shadow-xl flex flex-col md:flex-row gap-2">
+          <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 p-2 rounded-2xl shadow-xl flex flex-col md:flex-row gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input 
                 type="text" 
                 placeholder="Что вы ищете?"
-                className="w-full pl-12 pr-4 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700"
+                className="w-full pl-12 pr-4 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-white dark:bg-gray-800"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            
             <div className="md:w-1/3 relative border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700">
               <div className="relative h-full flex items-center">
                 <MapPin className="absolute left-3 text-gray-400 w-5 h-5" />
-                <select 
-                  value={searchCity}
-                  onChange={(e) => setSearchCity(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-gray-200 appearance-none bg-white dark:bg-gray-800"
-                >
-                  <option value="">Все города</option>
-                  {POPULAR_CITIES.map(city => (
-                    <option key={city} value={city}>{city}</option>
-                  ))}
-                </select>
+                <input 
+                  type="text"
+                  placeholder="Город"
+                  className="w-full pl-10 pr-10 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-white dark:bg-gray-800"
+                  value={selectedCity || locSearch}
+                  onChange={(e) => {
+                    setLocSearch(e.target.value);
+                    if (selectedCity) setSelectedCity('');
+                    setShowLocDropdown(true);
+                  }}
+                  onFocus={() => setShowLocDropdown(true)}
+                />
                 <Link 
                   to="/map"
                   className="absolute right-2 p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 transition-colors"
-                  title="Поиск на карте"
                 >
                   <MapIcon className="w-5 h-5" />
                 </Link>
               </div>
+
+              {showLocDropdown && locations.length > 0 && (
+                <div className="absolute z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                  {locations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b last:border-0 dark:border-gray-700"
+                      onClick={() => {
+                        setSelectedCity(loc.name);
+                        setLocSearch(loc.name);
+                        setShowLocDropdown(false);
+                      }}
+                    >
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">{loc.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{loc.region}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+            
             <button className="bg-blue-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-800 transition-colors">
               Найти
             </button>
@@ -107,12 +177,23 @@ const Home = () => {
           {categories.length > 0 ? categories.map((cat) => (
             <button 
               key={cat.id}
-              className="p-6 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl flex flex-col items-center gap-3 hover:border-blue-200 dark:hover:border-blue-500 hover:shadow-sm transition-all text-center group"
+              onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? null : cat.id)}
+              className={`p-6 bg-white dark:bg-gray-900 border rounded-2xl flex flex-col items-center gap-3 transition-all text-center group ${
+                selectedCategoryId === cat.id 
+                  ? 'border-blue-600 dark:border-blue-500 ring-2 ring-blue-600/10 shadow-md' 
+                  : 'border-gray-100 dark:border-gray-800 hover:border-blue-200 dark:hover:border-blue-500 hover:shadow-sm'
+              }`}
             >
-              <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 dark:group-hover:bg-blue-500 group-hover:text-white transition-colors text-2xl">
+              <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors text-2xl ${
+                selectedCategoryId === cat.id
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none'
+                  : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 dark:group-hover:bg-blue-500 group-hover:text-white'
+              }`}>
                 {cat.icon || '📦'}
               </div>
-              <span className="font-medium text-gray-700 dark:text-gray-300">{cat.name}</span>
+              <span className={`font-bold text-sm ${
+                selectedCategoryId === cat.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+              }`}>{cat.name}</span>
             </button>
           )) : (
             // Skeleton / Placeholder
