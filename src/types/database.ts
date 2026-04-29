@@ -51,14 +51,44 @@ export type Favorite = {
   created_at: string;
 };
 
+export type Conversation = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  created_at: string;
+  listings?: Listing;
+  buyer?: Profile;
+  seller?: Profile;
+};
+
 export type Message = {
   id: string;
+  conversation_id: string;
   sender_id: string;
-  receiver_id: string;
-  listing_id: string;
   content: string;
   is_read: boolean;
   created_at: string;
+};
+
+export type Deal = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  status: 'pending' | 'completed';
+  created_at: string;
+};
+
+export type Review = {
+  id: string;
+  deal_id: string;
+  reviewer_id: string;
+  reviewed_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  reviewer?: Profile;
 };
 
 export type Report = {
