@@ -9,6 +9,19 @@ export type Profile = {
   city: string | null;
   role: UserRole;
   is_blocked: boolean;
+  blocked_reason?: string | null;
+  blocked_at?: string | null;
+  created_at: string;
+};
+
+export type SupportTicket = {
+  id: string;
+  user_id?: string | null;
+  email: string;
+  subject: string;
+  message: string;
+  status: 'new' | 'in_progress' | 'closed';
+  admin_reply?: string | null;
   created_at: string;
 };
 
@@ -21,6 +34,16 @@ export type Category = {
 
 export type ListingStatus = 'draft' | 'moderation' | 'active' | 'rejected' | 'archived';
 
+export type Location = {
+  id: string;
+  name: string;
+  region: string | null;
+  type: string;
+  lat: number | null;
+  lng: number | null;
+  created_at: string;
+};
+
 export type Listing = {
   id: string;
   user_id: string;
@@ -29,6 +52,9 @@ export type Listing = {
   price: number;
   category_id: string;
   city: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
   status: ListingStatus;
   created_at: string;
   updated_at: string;
