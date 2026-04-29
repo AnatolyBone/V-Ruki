@@ -3,10 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Category, Listing } from '../types/database';
-import { MapPin, AlertCircle, Loader2, Save, ArrowLeft, Camera, X, Trash2 } from 'lucide-react';
-import { POPULAR_CITIES } from '../constants/data';
+import { MapPin, AlertCircle, Loader2, Save, ArrowLeft, Camera, X } from 'lucide-react';
 import { validateListingText, preventDoubleClick, validateImage } from '../utils/clientValidation';
 import { logSecurityEvent } from '../utils/logger';
+import { Location } from '../types/database';
 
 const EditListing = () => {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +18,12 @@ const EditListing = () => {
   const [fetchLoading, setFetchLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Locations state
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locSearch, setLocSearch] = useState('');
+  const [selectedLoc, setSelectedLoc] = useState<Location | null>(null);
+  const [showLocDropdown, setShowLocDropdown] = useState(false);
+
   // Image states
   const [existingImages, setExistingImages] = useState<any[]>([]);
   const [newImages, setNewImages] = useState<File[]>([]);
@@ -30,7 +36,26 @@ const EditListing = () => {
     price: '',
     category_id: '',
     city: '',
+    address: '',
   });
+
+  useEffect(() => {
+    const fetchLocs = async () => {
+      if (locSearch.length < 2 || (selectedLoc && selectedLoc.name === locSearch)) {
+        setLocations([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('locations')
+        .select('*')
+        .ilike('name', `%${locSearch}%`)
+        .limit(10);
+      if (data) setLocations(data);
+    };
+
+    const timer = setTimeout(fetchLocs, 300);
+    return () => clearTimeout(timer);
+  }, [locSearch, selectedLoc]);
 
   useEffect(() => {
     if (!user) {
@@ -78,6 +103,17 @@ const EditListing = () => {
           price: String(typedListing.price),
           category_id: typedListing.category_id || '',
           city: typedListing.city,
+          address: typedListing.address || '',
+        });
+        setLocSearch(typedListing.city);
+        setSelectedLoc({
+          id: 'existing',
+          name: typedListing.city,
+          lat: typedListing.lat,
+          lng: typedListing.lng,
+          region: null,
+          type: 'city',
+          created_at: '',
         });
       } catch (err: any) {
         console.error('Error fetching data:', err);
@@ -161,13 +197,20 @@ const EditListing = () => {
 
     try {
       // 1. Update listing
+      if (!selectedLoc) {
+        throw new Error('Пожалуйста, выберите город из списка');
+      }
+
       const { error: updateError } = await supabase
         .from('listings')
         .update({
           title: formData.title,
           description: formData.description,
           price: parseFloat(formData.price),
-          city: formData.city,
+          city: selectedLoc.name,
+          address: formData.address,
+          lat: selectedLoc.lat,
+          lng: selectedLoc.lng,
           category_id: formData.category_id,
           status: 'moderation',
           updated_at: new Date().toISOString()
@@ -303,20 +346,56 @@ const EditListing = () => {
             ></textarea>
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Город*</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <select
-                required
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white appearance-none"
-                value={formData.city}
-                onChange={e => setFormData({...formData, city: e.target.value})}
-              >
-                {POPULAR_CITIES.map(city => (
-                  <option key={city} value={city}>{city}</option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Город*</label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  required
+                  autoComplete="off"
+                  placeholder="Начните вводить город..."
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
+                  value={locSearch}
+                  onChange={(e) => {
+                    setLocSearch(e.target.value);
+                    setShowLocDropdown(true);
+                  }}
+                  onFocus={() => setShowLocDropdown(true)}
+                />
+              </div>
+              
+              {showLocDropdown && locations.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                  {locations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b last:border-0 dark:border-gray-700"
+                      onClick={() => {
+                        setSelectedLoc(loc);
+                        setLocSearch(loc.name);
+                        setShowLocDropdown(false);
+                      }}
+                    >
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">{loc.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{loc.region}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Адрес (улица, дом)</label>
+              <input
+                type="text"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
+                placeholder="ул. Ленина, 10"
+                value={formData.address}
+                onChange={e => setFormData({...formData, address: e.target.value})}
+              />
             </div>
           </div>
         </div>
