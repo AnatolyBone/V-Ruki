@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types/database';
-import { MapPin, Calendar, User, Phone, MessageCircle, Flag, Heart, Share2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { MapPin, Calendar, User, Phone, MessageCircle, Flag, Heart, Share2, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 
 const ListingDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +15,12 @@ const ListingDetails = () => {
   const [showPhone, setShowPhone] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favLoading, setFavLoading] = useState(false);
+
+  // Reporting states
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('Мошенничество');
+  const [reportComment, setReportComment] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchListing = async () => {
@@ -130,6 +136,67 @@ const ListingDetails = () => {
     }
   };
 
+  const handleShare = async () => {
+    if (!listing) return;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: listing.title,
+          text: listing.description?.slice(0, 120),
+          url: window.location.href
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Ссылка скопирована в буфер обмена');
+      } catch (err) {
+        console.error('Clipboard error:', err);
+        alert('Не удалось скопировать ссылку');
+      }
+    }
+  };
+
+  const handleReportClick = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setShowReportModal(true);
+  };
+
+  const handleReportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !listing) return;
+
+    setReportSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .insert({
+          reporter_id: user.id,
+          listing_id: listing.id,
+          reason: reportReason,
+          comment: reportComment.trim() || null,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      alert('Жалоба отправлена');
+      setShowReportModal(false);
+      setReportComment('');
+    } catch (err: any) {
+      console.error('Report error:', err);
+      alert(err.message || 'Ошибка при отправке жалобы');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   if (loading) return (
     <div className="container mx-auto px-4 py-12 animate-pulse">
       <div className="h-96 bg-gray-200 rounded-3xl mb-8"></div>
@@ -222,11 +289,17 @@ const ListingDetails = () => {
                 <Calendar className="w-5 h-5" />
                 <span>Опубликовано {new Date(listing.created_at).toLocaleDateString('ru-RU')}</span>
               </div>
-              <button className="flex items-center gap-2 hover:text-blue-600 transition-colors">
+              <button 
+                onClick={handleShare}
+                className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+              >
                 <Share2 className="w-5 h-5" />
                 <span>Поделиться</span>
               </button>
-              <button className="flex items-center gap-2 text-red-500 hover:text-red-600 transition-colors ml-auto">
+              <button 
+                onClick={handleReportClick}
+                className="flex items-center gap-2 text-red-500 hover:text-red-600 transition-colors ml-auto"
+              >
                 <Flag className="w-5 h-5" />
                 <span>Пожаловаться</span>
               </button>
@@ -325,6 +398,67 @@ const ListingDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-gray-100 dark:border-gray-800">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold dark:text-white">Пожаловаться</h3>
+              <button onClick={() => setShowReportModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors dark:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReportSubmit} className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Причина жалобы</label>
+                <select 
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-800 dark:text-white rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none"
+                >
+                  <option value="Мошенничество">Мошенничество</option>
+                  <option value="Спам">Спам</option>
+                  <option value="Запрещённый товар">Запрещённый товар</option>
+                  <option value="Дубль">Дубль</option>
+                  <option value="Неверная информация">Неверная информация</option>
+                  <option value="Другое">Другое</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Комментарий</label>
+                <textarea 
+                  rows={4}
+                  placeholder="Опишите проблему подробнее..."
+                  value={reportComment}
+                  onChange={(e) => setReportComment(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-800 dark:text-white rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowReportModal(false)}
+                  className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Отмена
+                </button>
+                <button 
+                  type="submit"
+                  disabled={reportSubmitting}
+                  className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {reportSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Отправить
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
