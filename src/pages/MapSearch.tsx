@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Listing } from '../types/database';
+import { Listing, Location } from '../types/database';
 import { MapPin, X, Navigation, Filter, Search, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -35,17 +35,46 @@ const MapSearch = () => {
   const [userLocation, setUserLocation] = useState<[number, number]>([55.7558, 37.6173]); // Moscow default
   const [isLocating, setIsLocating] = useState(false);
 
+  // Search & Filter
+  const [locSearch, setLocSearch] = useState('');
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [showLocDropdown, setShowLocDropdown] = useState(false);
+  const [selectedCity, setSelectedCity] = useState<string>('');
+
   useEffect(() => {
     const fetchListings = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('listings')
         .select('*, listing_images(*)')
-        .eq('status', 'active')
-        .limit(50);
+        .eq('status', 'active');
+      
+      if (selectedCity) {
+        query = query.eq('city', selectedCity);
+      }
+
+      const { data } = await query.limit(100);
       if (data) setListings(data as Listing[]);
     };
     fetchListings();
-  }, []);
+  }, [selectedCity]);
+
+  // Fetch locations for dropdown
+  useEffect(() => {
+    const fetchLocs = async () => {
+      if (locSearch.length < 2) {
+        setLocations([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('locations')
+        .select('*')
+        .ilike('name', `%${locSearch}%`)
+        .limit(5);
+      if (data) setLocations(data);
+    };
+    const timer = setTimeout(fetchLocs, 300);
+    return () => clearTimeout(timer);
+  }, [locSearch]);
 
   const handleLocateUser = () => {
     if (!navigator.geolocation) {
@@ -74,25 +103,56 @@ const MapSearch = () => {
       <div className="w-full md:w-80 lg:w-96 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col z-10 shadow-xl transition-colors">
         <div className="p-4 border-b border-gray-100 dark:border-gray-800">
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input 
               type="text" 
-              placeholder="Поиск в этом районе..."
+              placeholder="Город..."
               className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+              value={locSearch}
+              onChange={(e) => {
+                setLocSearch(e.target.value);
+                setShowLocDropdown(true);
+              }}
+              onFocus={() => setShowLocDropdown(true)}
             />
+            
+            {showLocDropdown && locations.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                {locations.map((loc) => (
+                  <button
+                    key={loc.id}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b last:border-0 dark:border-gray-700"
+                    onClick={() => {
+                      setSelectedCity(loc.name);
+                      setLocSearch(loc.name);
+                      setShowLocDropdown(false);
+                      if (loc.lat && loc.lng) setUserLocation([Number(loc.lat), Number(loc.lng)]);
+                    }}
+                  >
+                    <div className="font-bold text-gray-900 dark:text-white text-xs">{loc.name}</div>
+                    <div className="text-[10px] text-gray-500">{loc.region}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
-            <button className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold">
-              <Filter className="w-3 h-3" /> Фильтры
-            </button>
             <button 
               onClick={handleLocateUser}
               disabled={isLocating}
-              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
             >
               {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
               Мой район
             </button>
+            {selectedCity && (
+              <button 
+                onClick={() => {setSelectedCity(''); setLocSearch('');}}
+                className="flex items-center justify-center p-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -147,16 +207,13 @@ const MapSearch = () => {
           />
           <ChangeView center={userLocation} />
           
-          {listings.map((listing, i) => {
-            // Random jitter around user location if no real coords in DB
-            // In a real app, you'd store lat/lng in the listings table
-            const jitterLat = userLocation[0] + (Math.random() - 0.5) * 0.05;
-            const jitterLng = userLocation[1] + (Math.random() - 0.5) * 0.05;
+          {listings.map((listing) => {
+            if (!listing.lat || !listing.lng) return null;
             
             return (
               <Marker 
                 key={`marker-${listing.id}`} 
-                position={[jitterLat, jitterLng]}
+                position={[Number(listing.lat), Number(listing.lng)]}
                 icon={selectedListing?.id === listing.id ? selectedIcon : defaultIcon}
                 eventHandlers={{
                   click: () => setSelectedListing(listing),
