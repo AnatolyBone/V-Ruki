@@ -15,6 +15,8 @@ import Profile from './pages/Profile';
 import MyListings from './pages/MyListings';
 import Favorites from './pages/Favorites';
 import Messages from './pages/Messages';
+import Conversation from './pages/Conversation';
+import UserProfile from './pages/UserProfile';
 import AdminDashboard from './pages/AdminDashboard';
 import CategoryPage from './pages/CategoryPage';
 import MapSearch from './pages/MapSearch';
@@ -51,6 +53,8 @@ const AppContent = () => {
           <Route path="/my-listings" element={<MyListings />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/messages" element={<Messages />} />
+          <Route path="/messages/:conversationId" element={<Conversation />} />
+          <Route path="/user/:id" element={<UserProfile />} />
           <Route path="/admin/*" element={<AdminDashboard />} />
           <Route path="/map" element={<MapSearch />} />
           
