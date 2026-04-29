@@ -12,10 +12,12 @@ const AdminDashboard = () => {
   const canModerate = ['owner', 'admin', 'moderator'].includes(profile?.role || '');
 
   useEffect(() => {
-if (canModerate) {
-  fetchModerationListings();
-}
-  }, [profile]);
+ if (canModerate) {
+    fetchModerationListings();
+  } else {
+    setLoading(false);
+  }
+}, [profile]);
 
   const fetchModerationListings = async () => {
     setLoading(true);
@@ -35,8 +37,9 @@ if (canModerate) {
       .update({ status })
       .eq('id', id);
 
-    if (error) {
-      alert(error.message);
+if (error) {
+  console.error('Error fetching moderation listings:', error);
+  const canModerate = ['owner', 'admin', 'moderator'].includes(profile?.role || '');
     } else {
       setListings(listings.filter(l => l.id !== id));
     }
