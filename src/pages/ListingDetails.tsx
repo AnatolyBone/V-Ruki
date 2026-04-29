@@ -86,8 +86,48 @@ const ListingDetails = () => {
     }
   };
 
-  const handleMessageClick = () => {
-    alert('Сообщения скоро будут доступны');
+  const handleMessageClick = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!listing || !seller) return;
+
+    if (user.id === listing.user_id) {
+      alert('Вы не можете написать самому себе');
+      return;
+    }
+
+    try {
+      // Find or create conversation
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('listing_id', listing.id)
+        .eq('buyer_id', user.id)
+        .eq('seller_id', listing.user_id)
+        .maybeSingle();
+
+      if (existingConv) {
+        navigate(`/messages/${existingConv.id}`);
+      } else {
+        const { data: newConv, error: createError } = await supabase
+          .from('conversations')
+          .insert({
+            listing_id: listing.id,
+            buyer_id: user.id,
+            seller_id: listing.user_id
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        navigate(`/messages/${newConv.id}`);
+      }
+    } catch (err) {
+      console.error('Error starting conversation:', err);
+      alert('Ошибка при начале диалога');
+    }
   };
 
   if (loading) return (
@@ -252,8 +292,8 @@ const ListingDetails = () => {
 
             <hr className="my-6 border-gray-100 dark:border-gray-800" />
 
-            <div className="flex items-center gap-4 group">
-              <div className="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <Link to={`/user/${seller?.id}`} className="flex items-center gap-4 group hover:bg-gray-50 dark:hover:bg-gray-800/50 p-2 -m-2 rounded-2xl transition-colors">
+              <div className="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden flex-shrink-0">
                 {seller?.avatar_url ? (
                   <img src={seller.avatar_url} alt={seller.full_name || 'User'} className="w-full h-full object-cover" />
                 ) : (
@@ -262,16 +302,16 @@ const ListingDetails = () => {
                   </div>
                 )}
               </div>
-              <div className="flex-1">
-                <div className="font-bold text-gray-900 dark:text-white">
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors truncate">
                   {seller?.full_name || 'Частное лицо'}
                 </div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   На ВРуки с {new Date(seller?.created_at || Date.now()).toLocaleDateString('ru-RU')}
                 </div>
-                <div className="text-blue-600 dark:text-blue-400 text-xs font-medium mt-1">Продавец</div>
+                <div className="text-blue-600 dark:text-blue-400 text-xs font-medium mt-1">Перейти в профиль</div>
               </div>
-            </div>
+            </Link>
           </div>
           
           <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-3xl border border-blue-100 dark:border-blue-900/30 transition-colors">
