@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Listing, Category, Location } from '../types/database';
+import { Listing, Category } from '../types/database';
 import ListingCard from '../components/ListingCard';
 import { Search, ChevronRight, MapPin, Map as MapIcon, Sparkles } from 'lucide-react';
 import { DEFAULT_CATEGORIES } from '../constants/data';
@@ -14,29 +14,7 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string>('');
-  const [locations, setLocations] = useState<Location[]>([]);
   const [locSearch, setLocSearch] = useState('');
-  const [showLocDropdown, setShowLocDropdown] = useState(false);
-
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      const { data: catData, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name');
-
-      if (error) {
-        console.error('Categories error:', error);
-        setCategories(DEFAULT_CATEGORIES as any);
-        return;
-      }
-
-      if (catData && catData.length > 0) {
-        setCategories(catData);
-      } else {
-        setCategories(DEFAULT_CATEGORIES as any);
-      }
-    };
 
     fetchInitialData();
   }, []);
@@ -121,8 +99,6 @@ const Home = () => {
     if (city) {
       setSelectedCity(city);
     }
-
-    setShowLocDropdown(false);
   };
 
   const handleResetFilters = () => {
@@ -130,8 +106,6 @@ const Home = () => {
     setSelectedCity('');
     setLocSearch('');
     setSelectedCategoryId(null);
-    setLocations([]);
-    setShowLocDropdown(false);
   };
 
   return (
@@ -173,11 +147,9 @@ const Home = () => {
                   className="w-full pl-10 pr-10 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-white dark:bg-gray-800"
                   value={locSearch}
                   onChange={(e) => {
-                    setLocSearch(e.target.value);
-                    setSelectedCity('');
-                    setShowLocDropdown(true);
+                  setLocSearch(e.target.value);
+                  setSelectedCity('');
                   }}
-                  onFocus={() => setShowLocDropdown(true)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSearch();
                   }}
@@ -190,31 +162,6 @@ const Home = () => {
                   <MapIcon className="w-5 h-5" />
                 </Link>
               </div>
-
-              {showLocDropdown && locations.length > 0 && (
-                <div className="absolute top-full left-0 z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
-                  {locations.map((loc) => (
-                    <button
-                      key={loc.id}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b last:border-0 dark:border-gray-700"
-                      onClick={() => {
-                        setSelectedCity(loc.name);
-                        setLocSearch(loc.name);
-                        setLocations([]);
-                        setShowLocDropdown(false);
-                      }}
-                    >
-                      <div className="font-bold text-gray-900 dark:text-white text-sm">
-                        {loc.name}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {loc.region}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <button
               onClick={handleSearch}
