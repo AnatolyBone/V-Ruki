@@ -28,13 +28,13 @@ const CreateListing = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure city related fields are reset if they were strings before
         return {
           title: parsed.title || '',
           description: parsed.description || '',
           price: parsed.price || '',
           category_id: parsed.category_id || '',
           city: parsed.city || '',
+          region: parsed.region || '',
           address: parsed.address || '',
         };
       } catch (e) {
@@ -47,6 +47,7 @@ const CreateListing = () => {
       price: '',
       category_id: '',
       city: '',
+      region: '',
       address: '',
     };
   });
@@ -196,6 +197,10 @@ const CreateListing = () => {
         throw new Error('Пожалуйста, выберите город из списка');
       }
 
+      if (!formData.address.trim()) {
+        throw new Error('Пожалуйста, укажите адрес');
+      }
+
       const { data: listing, error: listingError } = await supabase
         .from('listings')
         .insert({
@@ -205,9 +210,8 @@ const CreateListing = () => {
           price: parseFloat(formData.price),
           category_id: formData.category_id,
           city: selectedLoc.name,
+          region: selectedLoc.region,
           address: formData.address,
-          lat: selectedLoc.lat,
-          lng: selectedLoc.lng,
           status: 'moderation'
         })
         .select()
