@@ -30,7 +30,6 @@ const CreateListing = () => {
       price: '',
       category_id: '',
       city: '',
-      region: '',
       address: '',
     };
   });
@@ -129,7 +128,6 @@ const CreateListing = () => {
           price: parseFloat(formData.price),
           category_id: formData.category_id,
           city: formData.city.trim(),
-          region: formData.region.trim(),
           address: formData.address.trim(),
           status: 'moderation'
         })
