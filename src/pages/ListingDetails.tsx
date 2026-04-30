@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Listing } from '../types/database';
 import { MapPin, Calendar, User, Phone, MessageCircle, Flag, Heart, Share2, ChevronLeft, ChevronRight, Loader2, X, Navigation } from 'lucide-react';
-import { loadYandexMaps } from '../lib/yandexMaps';
 
 const ListingDetails = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +15,6 @@ const ListingDetails = () => {
   const [showPhone, setShowPhone] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favLoading, setFavLoading] = useState(false);
-  const [mapsReady, setMapsReady] = useState(false);
 
   // Reporting states
   const [showReportModal, setShowReportModal] = useState(false);
@@ -61,41 +59,6 @@ const ListingDetails = () => {
 
     fetchListing();
   }, [id, user]);
-
-  useEffect(() => {
-    if (!listing) return;
-
-    const initMap = async () => {
-      try {
-        await loadYandexMaps();
-        setMapsReady(true);
-        // @ts-ignore
-        const ymaps = window.ymaps;
-        
-        const query = `Россия, ${listing.city}, ${listing.address}`;
-        const res = await ymaps.geocode(query, { results: 1 });
-        const firstGeoObject = res.geoObjects.get(0);
-        
-        if (firstGeoObject) {
-          const coords = firstGeoObject.geometry.getCoordinates();
-          const map = new ymaps.Map('listing-map', {
-            center: coords,
-            zoom: 15,
-            controls: ['zoomControl']
-          });
-          
-          const placemark = new ymaps.Placemark(coords, {
-            balloonContent: `${listing.city}, ${listing.address}`
-          }, {
-            preset: 'islands#blueDotIcon'
-          });
-          
-          map.geoObjects.add(placemark);
-        }
-      } catch (err) {
-        console.error('Yandex Maps init error:', err);
-      }
-    };
 
     initMap();
   }, [listing]);
@@ -352,22 +315,28 @@ const ListingDetails = () => {
               </p>
             </div>
 
-            <div className="pt-8 border-t border-gray-100 dark:border-gray-800">
-              <h2 className="text-xl font-bold mb-4">Местоположение</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-blue-600" />
-                {listing.city}{listing.address ? `, ${listing.address}` : ''}
-              </p>
-              <div id="listing-map" className="w-full h-80 bg-gray-100 dark:bg-gray-800 rounded-3xl overflow-hidden relative shadow-inner">
-                {!mapsReady && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+<div className="pt-8 border-t border-gray-100 dark:border-gray-800">
+  <h2 className="text-xl font-bold mb-4">Местоположение</h2>
+
+  <div className="bg-gray-50 dark:bg-gray-800 rounded-2xl p-5 flex items-start gap-3">
+    <MapPin className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+    <div>
+      <div className="font-bold text-gray-900 dark:text-white">
+        {listing.city || 'Город не указан'}
+      </div>
+
+      {listing.address && (
+        <div className="text-gray-600 dark:text-gray-400 mt-1">
+          {listing.address}
         </div>
+      )}
+    </div>
+  </div>
+
+  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+    Точный адрес уточняйте у продавца в сообщениях или по телефону.
+  </p>
+</div>
 
         {/* Sidebar */}
         <div className="space-y-6">
