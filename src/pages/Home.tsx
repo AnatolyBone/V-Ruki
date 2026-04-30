@@ -16,92 +16,79 @@ const Home = () => {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [locSearch, setLocSearch] = useState('');
 
+  // --- Categories ---
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      const { data: catData, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name');
+
+      if (error) {
+        console.error('Categories error:', error);
+        setCategories(DEFAULT_CATEGORIES as any);
+        return;
+      }
+
+      setCategories(catData && catData.length > 0 ? catData : (DEFAULT_CATEGORIES as any));
+    };
+
     fetchInitialData();
   }, []);
 
-  useEffect(() => {
-    const fetchListings = async () => {
-      setLoading(true);
+  // --- Listings ---
+  const fetchListings = async () => {
+    setLoading(true);
 
-      try {
-        let query = supabase
-          .from('listings')
-          .select('*, listing_images(*)')
-          .eq('status', 'active');
+    try {
+      let query = supabase
+        .from('listings')
+        .select('*, listing_images(*)')
+        .eq('status', 'active');
 
-        if (selectedCategoryId) {
-          query = query.eq('category_id', selectedCategoryId);
-        }
-
-        if (selectedCity) {
-          query = query.ilike('city', `%${selectedCity}%`);
-        }
-
-        if (searchQuery.trim()) {
-          const search = searchQuery.trim();
-          query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
-        }
-
-        const { data, error } = await query
-          .order('created_at', { ascending: false })
-          .limit(40);
-
-        if (error) {
-          console.error('Listings error:', error);
-          setListings([]);
-          return;
-        }
-
-        setListings((data || []) as Listing[]);
-      } catch (err) {
-        console.error('Filter error:', err);
-        setListings([]);
-      } finally {
-        setLoading(false);
+      if (selectedCategoryId) {
+        query = query.eq('category_id', selectedCategoryId);
       }
-    };
 
+      if (selectedCity) {
+        query = query.ilike('city', `%${selectedCity}%`);
+      }
+
+      if (searchQuery.trim()) {
+        const search = searchQuery.trim();
+        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (error) {
+        console.error('Listings error:', error);
+        setListings([]);
+        return;
+      }
+
+      setListings((data || []) as Listing[]);
+    } catch (err) {
+      console.error('Filter error:', err);
+      setListings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     const timer = setTimeout(fetchListings, 400);
     return () => clearTimeout(timer);
   }, [searchQuery, selectedCategoryId, selectedCity]);
 
-  useEffect(() => {
-    const fetchLocs = async () => {
-      const search = locSearch.trim();
-
-      if (search.length < 2 || search === selectedCity) {
-        setLocations([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('locations')
-        .select('*')
-        .ilike('name', `${search}%`)
-        .limit(10);
-
-      if (error) {
-        console.error('Locations search error:', error);
-        setLocations([]);
-        return;
-      }
-
-      setLocations((data || []) as Location[]);
-    };
-
-    const timer = setTimeout(fetchLocs, 300);
-    return () => clearTimeout(timer);
-  }, [locSearch, selectedCity]);
-
+  // --- Actions ---
   const handleSearch = () => {
-    const city = locSearch.trim();
-
-    if (city) {
-      setSelectedCity(city);
-    }
+    setSelectedCity(locSearch.trim());
   };
 
-  const handleResetFilters = () => {
+  const resetFilters = () => {
     setSearchQuery('');
     setSelectedCity('');
     setLocSearch('');
@@ -110,6 +97,7 @@ const Home = () => {
 
   return (
     <div className="pb-20">
+      {/* Hero */}
       <section className="bg-blue-600 py-16 px-4">
         <div className="container mx-auto text-center">
           <h1 className="text-3xl md:text-5xl font-bold text-white mb-6">
@@ -122,9 +110,10 @@ const Home = () => {
           </p>
 
           <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 p-2 rounded-2xl shadow-xl flex flex-col md:flex-row gap-2 relative">
+            
+            {/* Text search */}
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-
               <input
                 type="text"
                 placeholder="Что вы ищете?"
@@ -132,23 +121,23 @@ const Home = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSearch();
+                  if (e.key === 'Enter') fetchListings();
                 }}
               />
             </div>
 
+            {/* City */}
             <div className="md:w-1/3 relative border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700">
               <div className="relative h-full flex items-center">
                 <MapPin className="absolute left-3 text-gray-400 w-5 h-5" />
-
                 <input
                   type="text"
                   placeholder="Город"
                   className="w-full pl-10 pr-10 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-white dark:bg-gray-800"
                   value={locSearch}
                   onChange={(e) => {
-                  setLocSearch(e.target.value);
-                  setSelectedCity('');
+                    setLocSearch(e.target.value);
+                    setSelectedCity('');
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSearch();
@@ -162,6 +151,7 @@ const Home = () => {
                   <MapIcon className="w-5 h-5" />
                 </Link>
               </div>
+            </div>
 
             <button
               onClick={handleSearch}
@@ -173,133 +163,65 @@ const Home = () => {
         </div>
       </section>
 
-      <section className="container mx-auto px-4 py-12 bg-white dark:bg-gray-950 transition-colors">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Популярные категории
-          </h2>
-
-          {categories.length === 0 && !loading && (
-            <p className="text-amber-600 text-sm italic">Категории не загружены.</p>
-          )}
-        </div>
+      {/* Categories */}
+      <section className="container mx-auto px-4 py-12 bg-white dark:bg-gray-950">
+        <h2 className="text-2xl font-bold mb-8">Популярные категории</h2>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
-          {categories.length > 0 ? categories.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? null : cat.id)}
-              className={`p-6 rounded-3xl flex flex-col items-center gap-4 transition-all text-center ${
-                selectedCategoryId === cat.id
-                  ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 dark:shadow-none scale-105'
-                  : 'bg-gray-50 dark:bg-gray-900 border border-transparent hover:border-blue-200 dark:hover:border-blue-800 hover:bg-white dark:hover:bg-gray-800 shadow-sm'
+              className={`p-6 rounded-3xl ${
+                selectedCategoryId === cat.id ? 'bg-blue-600 text-white' : 'bg-gray-50 dark:bg-gray-900'
               }`}
             >
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${
-                selectedCategoryId === cat.id ? 'bg-white/20' : 'bg-white dark:bg-gray-800'
-              }`}>
-                {cat.icon || '📦'}
-              </div>
-
-              <span className={`font-black text-sm uppercase tracking-wider ${
-                selectedCategoryId === cat.id ? 'text-white' : 'text-gray-900 dark:text-gray-100'
-              }`}>
-                {cat.name}
-              </span>
+              {cat.name}
             </button>
-          )) : (
-            Array(6).fill(0).map((_, i) => (
-              <div
-                key={i}
-                className="h-40 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-3xl shadow-sm"
-              />
-            ))
-          )}
+          ))}
         </div>
       </section>
 
+      {/* Near */}
       <section className="bg-gray-100 dark:bg-gray-900/50 py-12">
         <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-600 text-white rounded-xl">
-                <Sparkles className="w-6 h-6" />
-              </div>
-
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {selectedCity ? `Новое рядом: ${selectedCity}` : 'Новое рядом с вами'}
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {selectedCity
-                    ? 'Объявления в выбранном городе'
-                    : 'Выберите город, чтобы увидеть объявления рядом'}
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to="/map"
-              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
-            >
-              <MapIcon className="w-4 h-4" /> На карте
-            </Link>
-          </div>
+          <h2 className="text-2xl font-bold mb-4">
+            {selectedCity ? `Новое рядом: ${selectedCity}` : 'Новое рядом с вами'}
+          </h2>
 
           {selectedCity ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {listings.slice(0, 4).map((listing) => (
-                <ListingCard key={`near-${listing.id}`} listing={listing} />
+            <div className="grid grid-cols-4 gap-6">
+              {listings.slice(0, 4).map((l) => (
+                <ListingCard key={l.id} listing={l} />
               ))}
             </div>
           ) : (
-            <div className="bg-white dark:bg-gray-900 border border-dashed border-gray-300 dark:border-gray-700 rounded-3xl p-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400">
-                Введите город в поиске выше, например “Нижний Новгород”.
-              </p>
+            <div className="text-center text-gray-500">
+              Введите город
             </div>
           )}
         </div>
       </section>
 
-      <section className="container mx-auto px-4 py-12 bg-white dark:bg-gray-950 transition-colors">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {searchQuery || selectedCity || selectedCategoryId ? 'Результаты поиска' : 'Свежие объявления'}
-          </h2>
-
-          <button className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 hover:underline">
-            Смотреть все <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Listings */}
+      <section className="container mx-auto px-4 py-12">
+        <h2 className="text-2xl font-bold mb-8">
+          {searchQuery || selectedCity ? 'Результаты поиска' : 'Свежие объявления'}
+        </h2>
 
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {Array(8).fill(0).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[4/5] bg-gray-100 dark:bg-gray-800 animate-pulse rounded-xl"
-              />
-            ))}
-          </div>
+          <div>Загрузка...</div>
         ) : listings.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {listings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
+          <div className="grid grid-cols-4 gap-6">
+            {listings.map((l) => (
+              <ListingCard key={l.id} listing={l} />
             ))}
           </div>
         ) : (
-          <div className="text-center py-20 bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800">
-            <p className="text-gray-500">Ничего не найдено по вашему запросу.</p>
-
-            {(searchQuery || selectedCity || selectedCategoryId) && (
-              <button
-                onClick={handleResetFilters}
-                className="mt-4 text-blue-600 font-bold"
-              >
-                Сбросить фильтры
-              </button>
-            )}
+          <div className="text-center">
+            Ничего не найдено
+            <br />
+            <button onClick={resetFilters}>Сбросить</button>
           </div>
         )}
       </section>
