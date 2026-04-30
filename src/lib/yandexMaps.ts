@@ -1,4 +1,3 @@
-```ts
 let isLoading = false;
 let isReady = false;
 let promise: Promise<void> | null = null;
@@ -11,14 +10,17 @@ export const loadYandexMaps = (): Promise<void> => {
 
   if (!apiKey) {
     console.error('Yandex Maps API key is missing');
-    return Promise.reject('No API key');
+    return Promise.reject(new Error('Yandex Maps API key is missing'));
   }
 
   isLoading = true;
 
   promise = new Promise((resolve, reject) => {
-    // если скрипт уже есть — не вставляем второй раз
-    if (document.querySelector('script[src*="api-maps.yandex.ru"]')) {
+    const existingScript = document.querySelector(
+      'script[src*="api-maps.yandex.ru"]'
+    );
+
+    if (existingScript) {
       // @ts-ignore
       window.ymaps.ready(() => {
         isReady = true;
@@ -43,6 +45,7 @@ export const loadYandexMaps = (): Promise<void> => {
 
     script.onerror = (err) => {
       isLoading = false;
+      promise = null;
       console.error('Yandex Maps load error:', err);
       reject(err);
     };
@@ -66,7 +69,6 @@ export const geocodeAddress = async (
 
     // @ts-ignore
     const res = await window.ymaps.geocode(query, { results: 1 });
-
     const firstGeoObject = res.geoObjects.get(0);
 
     if (!firstGeoObject) return null;
@@ -77,4 +79,3 @@ export const geocodeAddress = async (
     return null;
   }
 };
-```
