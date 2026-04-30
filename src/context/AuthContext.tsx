@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchingUserIdRef.current = null;
 
     if (error) {
-      console.error('Error fetching profile:', error);
+      console.error('[Auth] profile error:', error);
       return;
     }
 
@@ -50,15 +50,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error('[Auth] session error:', error);
+        }
+
+        const currentUser = data.session?.user ?? null;
+
+        if (!mounted) return;
+
+        setUser(currentUser);
+
+        if (currentUser) {
+          await fetchProfile(currentUser.id);
+        } else {
+          setProfile(null);
+          profileUserIdRef.current = null;
+        }
+      } catch (err) {
+        console.error('[Auth] init error:', err);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initAuth();
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') return;
+
       const currentUser = session?.user ?? null;
 
       setUser(currentUser);
 
       if (currentUser) {
-        await fetchProfile(currentUser.id);
+        fetchProfile(currentUser.id);
       } else {
         setProfile(null);
         profileUserIdRef.current = null;
@@ -69,6 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
