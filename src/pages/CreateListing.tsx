@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Category, Location } from '../types/database';
-import { Camera, MapPin, AlertCircle, Loader2, Search as SearchIcon } from 'lucide-react';
+import { Category } from '../types/database';
+import { Camera, MapPin, AlertCircle, Loader2 } from 'lucide-react';
 import { validateListingText, validateImage, preventDoubleClick } from '../utils/clientValidation';
 import { logSecurityEvent } from '../utils/logger';
 
@@ -17,29 +17,12 @@ const CreateListing = () => {
   const [error, setError] = useState<string | null>(null);
   const [catLoading, setCatLoading] = useState(true);
 
-  // Locations state
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [locSearch, setLocSearch] = useState('');
-  const [selectedLoc, setSelectedLoc] = useState<Location | null>(null);
-  const [showLocDropdown, setShowLocLocDropdown] = useState(false);
-  
   const [formData, setFormData] = useState(() => {
     const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        return {
-          title: parsed.title || '',
-          description: parsed.description || '',
-          price: parsed.price || '',
-          category_id: parsed.category_id || '',
-          city: parsed.city || '',
-          region: parsed.region || '',
-          address: parsed.address || '',
-        };
-      } catch (e) {
-        console.error('Error parsing draft:', e);
-      }
+        return JSON.parse(saved);
+      } catch {}
     }
     return {
       title: '',
@@ -55,7 +38,6 @@ const CreateListing = () => {
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
-  // Save draft to localStorage when formData changes
   useEffect(() => {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(formData));
   }, [formData]);
@@ -68,140 +50,77 @@ const CreateListing = () => {
 
     const fetchCategories = async () => {
       setCatLoading(true);
-      try {
-        const { data, error } = await supabase.from('categories').select('*').order('name');
-        if (error) throw error;
-        if (data && data.length > 0) {
-          setCategories(data);
-        } else {
-          setCategories([]);
-          console.warn('Categories table is empty in Supabase');
-        }
-      } catch (err) {
-        console.error('Error fetching categories:', err);
-      } finally {
-        setCatLoading(false);
-      }
+      const { data } = await supabase.from('categories').select('*').order('name');
+      if (data) setCategories(data);
+      setCatLoading(false);
     };
 
     fetchCategories();
   }, [user, navigate]);
 
-  // Fetch locations based on search
-  useEffect(() => {
-    const fetchLocs = async () => {
-      if (locSearch.length < 2) {
-        setLocations([]);
-        return;
-      }
-      const { data } = await supabase
-        .from('locations')
-        .select('*')
-        .ilike('name', `%${locSearch}%`)
-        .limit(10);
-      if (data) setLocations(data);
-    };
-
-    const timer = setTimeout(fetchLocs, 300);
-    return () => clearTimeout(timer);
-  }, [locSearch]);
-
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      
-      if (images.length + newFiles.length > 10) {
-        alert('Максимум 10 изображений');
+    if (!e.target.files) return;
+
+    const newFiles = Array.from(e.target.files);
+
+    if (images.length + newFiles.length > 10) {
+      alert('Максимум 10 изображений');
+      return;
+    }
+
+    for (const file of newFiles) {
+      const error = validateImage(file);
+      if (error) {
+        alert(error);
         return;
       }
-
-      for (const file of newFiles) {
-        const error = validateImage(file);
-        if (error) {
-          alert(error);
-          return;
-        }
-      }
-
-      setImages([...images, ...newFiles]);
-      const newPreviews = newFiles.map(file => URL.createObjectURL(file));
-      setPreviews([...previews, ...newPreviews]);
     }
+
+    setImages([...images, ...newFiles]);
+    setPreviews([...previews, ...newFiles.map(file => URL.createObjectURL(file))]);
   };
 
   const removeImage = (index: number) => {
-    const newImgArr = [...images];
-    newImgArr.splice(index, 1);
-    setImages(newImgArr);
+    const newImgs = [...images];
+    newImgs.splice(index, 1);
+    setImages(newImgs);
 
-    const newPreviewArr = [...previews];
-    URL.revokeObjectURL(newPreviewArr[index]);
-    newPreviewArr.splice(index, 1);
-    setPreviews(newPreviewArr);
+    const newPrev = [...previews];
+    URL.revokeObjectURL(newPrev[index]);
+    newPrev.splice(index, 1);
+    setPreviews(newPrev);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    
-    // 1. UI Debounce Check
+
     if (!preventDoubleClick('create_listing', 5000)) {
-      setError('Пожалуйста, подождите немного перед следующей попыткой.');
+      setError('Подождите перед повторной попыткой');
       return;
     }
 
-    // 2. Text Validation
-    const validationError = validateListingText(formData.title, formData.description);
-    if (validationError) {
-      setError(validationError);
+    const textError = validateListingText(formData.title, formData.description);
+    if (textError) {
+      setError(textError);
       return;
     }
 
-    // 2.1 Photo Validation
+    if (!formData.city.trim()) {
+      setError('Укажите город');
+      return;
+    }
+
     if (images.length < 1) {
-      setError('Добавьте хотя бы одно фото объявления');
+      setError('Добавьте хотя бы одно фото');
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    let createdListingId: string | null = null;
-
     try {
-      // 3. Check Account Limits (Max 20 total)
-      const { count: totalCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      if (totalCount !== null && totalCount >= 20) {
-        throw new Error('Вы достигли лимита в 20 объявлений на один аккаунт.');
-      }
-
-      // 4. Check Daily Limits (Max 3 per day)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const { count: todayCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .gte('created_at', today.toISOString());
-
-      if (todayCount !== null && todayCount >= 3) {
-        throw new Error('Вы достигли лимита в 3 объявления в день. Попробуйте завтра.');
-      }
-
-      // 5. Create Listing
-      if (!selectedLoc) {
-        throw new Error('Пожалуйста, выберите город из списка');
-      }
-
-      if (!formData.address.trim()) {
-        throw new Error('Пожалуйста, укажите адрес');
-      }
-
-      const { data: listing, error: listingError } = await supabase
+      const { data: listing, error } = await supabase
         .from('listings')
         .insert({
           user_id: user.id,
@@ -209,56 +128,40 @@ const CreateListing = () => {
           description: formData.description,
           price: parseFloat(formData.price),
           category_id: formData.category_id,
-          city: selectedLoc.name,
-          region: selectedLoc.region,
-          address: formData.address,
+          city: formData.city.trim(),
+          region: formData.region.trim(),
+          address: formData.address.trim(),
           status: 'moderation'
         })
         .select()
         .single();
 
-      if (listingError) throw listingError;
-      createdListingId = listing.id;
+      if (error) throw error;
 
-      // 2. Upload Images
-      if (images.length > 0) {
-        try {
-          for (let i = 0; i < images.length; i++) {
-            const file = images[i];
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${listing.id}/${Math.random()}.${fileExt}`;
-            
-            const { error: uploadError } = await supabase.storage
-              .from('listings')
-              .upload(fileName, file);
+      // Upload images
+      for (let i = 0; i < images.length; i++) {
+        const file = images[i];
+        const ext = file.name.split('.').pop();
+        const fileName = `${listing.id}/${Math.random()}.${ext}`;
 
-            if (uploadError) throw uploadError;
+        await supabase.storage.from('listings').upload(fileName, file);
 
-            const { data: { publicUrl } } = supabase.storage
-              .from('listings')
-              .getPublicUrl(fileName);
+        const { data: { publicUrl } } = supabase
+          .storage
+          .from('listings')
+          .getPublicUrl(fileName);
 
-            const { error: imgInsertError } = await supabase.from('listing_images').insert({
-              listing_id: listing.id,
-              user_id: user.id,
-              url: publicUrl,
-              is_main: i === 0
-            });
-
-            if (imgInsertError) throw imgInsertError;
-          }
-        } catch (imgErr) {
-          if (createdListingId) {
-            await supabase.from('listings').delete().eq('id', createdListingId).eq('user_id', user.id);
-          }
-          throw new Error('Не удалось загрузить фото. Объявление не создано, попробуйте ещё раз.');
-        }
+        await supabase.from('listing_images').insert({
+          listing_id: listing.id,
+          user_id: user.id,
+          url: publicUrl,
+          is_main: i === 0
+        });
       }
 
-      // 7. Clear draft on success
       localStorage.removeItem(DRAFT_KEY);
-
       navigate('/my-listings');
+
     } catch (err: any) {
       logSecurityEvent('listing_creation', err.message, user.id);
       setError(err.message);
@@ -268,202 +171,91 @@ const CreateListing = () => {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-8 text-center">Новое объявление</h1>
-      
+      <h1 className="text-3xl font-bold mb-8 text-center">Новое объявление</h1>
+
       {error && (
-        <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-600">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p>{error}</p>
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex gap-2 text-red-600">
+          <AlertCircle /> {error}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8 bg-white dark:bg-gray-900 p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Общая информация</h2>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название объявления*</label>
-            <input
-              type="text"
-              required
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
-              placeholder="Например, iPhone 13 128GB"
-              value={formData.title}
-              onChange={e => setFormData({...formData, title: e.target.value})}
-            />
-          </div>
+      <form onSubmit={handleSubmit} className="space-y-6">
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Категория*</label>
-              <select
-                required
-                disabled={catLoading || categories.length === 0}
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white dark:bg-gray-800 dark:text-white disabled:bg-gray-50 dark:disabled:bg-gray-900 transition-colors"
-                value={formData.category_id}
-                onChange={e => setFormData({...formData, category_id: e.target.value})}
-              >
-                {catLoading ? (
-                  <option value="">Загрузка категорий...</option>
-                ) : categories.length === 0 ? (
-                  <option value="">⚠️ Категории не загружены в БД</option>
-                ) : (
-                  <>
-                    <option value="">Выберите категорию</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </>
-                )}
-              </select>
-              {!catLoading && categories.length === 0 && (
-                <p className="mt-1 text-xs text-red-500">Пожалуйста, добавьте категории в таблицу public.categories через Supabase SQL Editor.</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Цена (₽)*</label>
-              <input
-                type="number"
-                required
-                min="0"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
-                placeholder="0"
-                value={formData.price}
-                onChange={e => setFormData({...formData, price: e.target.value})}
-              />
-            </div>
-          </div>
+        <input
+          type="text"
+          placeholder="Название"
+          required
+          value={formData.title}
+          onChange={e => setFormData({ ...formData, title: e.target.value })}
+          className="w-full p-3 border rounded-xl"
+        />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание*</label>
-            <textarea
-              required
-              rows={5}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white resize-none"
-              placeholder="Опишите ваш товар или услугу..."
-              value={formData.description}
-              onChange={e => setFormData({...formData, description: e.target.value})}
-            ></textarea>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Город*</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  required
-                  autoComplete="off"
-                  placeholder="Начните вводить город..."
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
-                  value={selectedLoc ? selectedLoc.name : locSearch}
-                  onChange={(e) => {
-                    setLocSearch(e.target.value);
-                    if (selectedLoc) setSelectedLoc(null);
-                    setShowLocLocDropdown(true);
-                  }}
-                  onFocus={() => setShowLocLocDropdown(true)}
-                />
-              </div>
-              
-              {showLocDropdown && locations.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                  {locations.map((loc) => (
-                    <button
-                      key={loc.id}
-                      type="button"
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b last:border-0 dark:border-gray-700"
-                      onClick={() => {
-                        setSelectedLoc(loc);
-                        setLocSearch(loc.name);
-                        setShowLocLocDropdown(false);
-                      }}
-                    >
-                      <div className="font-bold text-gray-900 dark:text-white text-sm">{loc.name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{loc.region}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        <textarea
+          placeholder="Описание"
+          required
+          value={formData.description}
+          onChange={e => setFormData({ ...formData, description: e.target.value })}
+          className="w-full p-3 border rounded-xl"
+        />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Адрес (улица, дом)</label>
-              <input
-                type="text"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none dark:bg-gray-800 dark:text-white"
-                placeholder="ул. Ленина, 10"
-                value={formData.address}
-                onChange={e => setFormData({...formData, address: e.target.value})}
-              />
-            </div>
-          </div>
+        <input
+          type="number"
+          placeholder="Цена"
+          required
+          value={formData.price}
+          onChange={e => setFormData({ ...formData, price: e.target.value })}
+          className="w-full p-3 border rounded-xl"
+        />
+
+        <select
+          required
+          value={formData.category_id}
+          onChange={e => setFormData({ ...formData, category_id: e.target.value })}
+          className="w-full p-3 border rounded-xl"
+        >
+          <option value="">Категория</option>
+          {categories.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        <div className="grid grid-cols-3 gap-3">
+          <input
+            placeholder="Город"
+            required
+            value={formData.city}
+            onChange={e => setFormData({ ...formData, city: e.target.value })}
+            className="p-3 border rounded-xl"
+          />
+          <input
+            placeholder="Регион"
+            value={formData.region}
+            onChange={e => setFormData({ ...formData, region: e.target.value })}
+            className="p-3 border rounded-xl"
+          />
+          <input
+            placeholder="Адрес"
+            value={formData.address}
+            onChange={e => setFormData({ ...formData, address: e.target.value })}
+            className="p-3 border rounded-xl"
+          />
         </div>
 
-        <div className="space-y-4 border-t dark:border-gray-800 pt-8">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Фотографии*</h2>
-          <p className="text-sm text-gray-500">
-            Добавьте хотя бы одно фото. Первое фото будет на обложке. Максимум 10 штук.
-          </p>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {previews.map((preview, index) => (
-              <div key={index} className="relative aspect-square rounded-xl overflow-hidden group">
-                <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                {index === 0 && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-blue-600 text-white text-[10px] text-center py-1">
-                    Главное
-                  </div>
-                )}
-              </div>
-            ))}
-            
-            {previews.length < 10 && (
-              <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all text-gray-400 hover:text-blue-500">
-                <Camera className="w-8 h-8" />
-                <span className="text-xs font-medium text-center px-2">Добавить фото*</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
-              </label>
-            )}
-          </div>
-          <p className="text-xs text-amber-600 font-medium">
-            ⚠️ При обновлении страницы фотографии нужно выбрать заново.
-          </p>
+        <input type="file" multiple onChange={handleImageChange} />
+
+        <div className="grid grid-cols-4 gap-2">
+          {previews.map((p, i) => (
+            <img key={i} src={p} onClick={() => removeImage(i)} className="cursor-pointer rounded" />
+          ))}
         </div>
 
-        <div className="border-t dark:border-gray-800 pt-8">
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg shadow-lg shadow-blue-200"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-6 h-6 animate-spin" />
-                Публикация...
-              </>
-            ) : 'Разместить объявление'}
-          </button>
-          <p className="text-center text-sm text-gray-500 mt-4">
-            После публикации объявление отправится на модерацию.
-          </p>
-        </div>
+        <button
+          disabled={loading}
+          className="w-full bg-blue-600 text-white py-3 rounded-xl"
+        >
+          {loading ? 'Загрузка...' : 'Создать'}
+        </button>
+
       </form>
     </div>
   );
