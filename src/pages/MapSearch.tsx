@@ -1,39 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Listing, Location } from '../types/database';
-import { MapPin, X, Navigation, Filter, Search, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-
-// Fix Leaflet icons
-const defaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-const selectedIcon = L.icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-const ChangeView = ({ center }: { center: [number, number] }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(center);
-  }, [center, map]);
-  return null;
-};
+import { MapPin, X, Navigation, Loader2 } from 'lucide-react';
+import { loadYandexMaps } from '../lib/yandexMaps';
 
 const MapSearch = () => {
+  const mapRef = useRef<any>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
-  const [userLocation, setUserLocation] = useState<[number, number]>([55.7558, 37.6173]); // Moscow default
-  const [isLocating, setIsLocating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [mapsReady, setMapsReady] = useState(false);
 
   // Search & Filter
   const [locSearch, setLocSearch] = useState('');
@@ -42,26 +18,46 @@ const MapSearch = () => {
   const [selectedCity, setSelectedCity] = useState<string>('');
 
   useEffect(() => {
-    const fetchListings = async () => {
-      let query = supabase
-        .from('listings')
-        .select('*, listing_images(*)')
-        .eq('status', 'active');
-      
-      if (selectedCity) {
-        query = query.eq('city', selectedCity);
+    const init = async () => {
+      try {
+        await loadYandexMaps();
+        setMapsReady(true);
+      } catch (err) {
+        console.error('Yandex Maps init error:', err);
       }
+    };
+    init();
+  }, []);
 
-      const { data } = await query.limit(100);
-      if (data) setListings(data as Listing[]);
+  useEffect(() => {
+    const fetchListings = async () => {
+      setLoading(true);
+      try {
+        let query = supabase
+          .from('listings')
+          .select('*, listing_images(*)')
+          .eq('status', 'active');
+        
+        if (selectedCity) {
+          query = query.eq('city', selectedCity);
+        }
+
+        const { data, error } = await query.limit(100);
+        if (error) throw error;
+        if (data) setListings(data as Listing[]);
+      } catch (err) {
+        console.error('Error fetching listings:', err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchListings();
   }, [selectedCity]);
 
-  // Fetch locations for dropdown
+  // Locations dropdown search
   useEffect(() => {
     const fetchLocs = async () => {
-      if (locSearch.length < 2) {
+      if (locSearch.length < 2 || locSearch === selectedCity) {
         setLocations([]);
         return;
       }
@@ -70,31 +66,82 @@ const MapSearch = () => {
         .select('*')
         .ilike('name', `%${locSearch}%`)
         .limit(5);
-      if (data) setLocations(data);
+      if (data) setLocations(data as Location[]);
     };
     const timer = setTimeout(fetchLocs, 300);
     return () => clearTimeout(timer);
-  }, [locSearch]);
+  }, [locSearch, selectedCity]);
 
-  const handleLocateUser = () => {
-    if (!navigator.geolocation) {
-      alert('Геолокация не поддерживается вашим браузером');
-      return;
+  // Map initialization and markers
+  useEffect(() => {
+    if (!mapsReady) return;
+
+    // @ts-ignore
+    const ymaps = window.ymaps;
+
+    if (!mapRef.current) {
+      mapRef.current = new ymaps.Map('yandex-map-container', {
+        center: [55.7558, 37.6173], // Moscow default
+        zoom: 10,
+        controls: ['zoomControl']
+      });
     }
 
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setUserLocation([latitude, longitude]);
-        setIsLocating(false);
-      },
-      (error) => {
-        console.error('Geolocation error:', error);
-        alert('Не удалось определить местоположение. Проверьте разрешения.');
-        setIsLocating(false);
+    const map = mapRef.current;
+    map.geoObjects.removeAll();
+
+    const clusterer = new ymaps.Clusterer({
+      preset: 'islands#invertedBlueClusterIcons',
+      groupByCoordinates: false,
+    });
+
+    listings.forEach(listing => {
+      const query = `Россия, ${listing.city}, ${listing.address || ''}`;
+      ymaps.geocode(query, { results: 1 }).then((res: any) => {
+        const firstGeoObject = res.geoObjects.get(0);
+        if (firstGeoObject) {
+          const coords = firstGeoObject.geometry.getCoordinates();
+          const placemark = new ymaps.Placemark(coords, {
+            balloonContentHeader: `<div class="font-bold text-gray-900">${listing.title}</div>`,
+            balloonContentBody: `
+              <div class="text-sm">
+                <div class="font-black text-blue-600 mb-1">${listing.price.toLocaleString()} ₽</div>
+                <div class="text-gray-500 mb-2">${listing.city}${listing.address ? `, ${listing.address}` : ''}</div>
+                <a href="/listing/${listing.id}" class="block text-center bg-blue-600 text-white py-1.5 px-3 rounded-lg font-bold text-xs no-underline">Подробнее</a>
+              </div>
+            `,
+          }, {
+            preset: 'islands#blueDotIcon'
+          });
+          
+          placemark.events.add('click', () => setSelectedListing(listing));
+          clusterer.add(placemark);
+        }
+      });
+    });
+
+    map.geoObjects.add(clusterer);
+
+    // If city selected, center map
+    if (selectedCity) {
+      ymaps.geocode(`Россия, ${selectedCity}`, { results: 1 }).then((res: any) => {
+        const firstGeoObject = res.geoObjects.get(0);
+        if (firstGeoObject) {
+          map.setCenter(firstGeoObject.geometry.getCoordinates(), 12, { duration: 1000 });
+        }
+      });
+    }
+
+  }, [mapsReady, listings, selectedCity]);
+
+  const handleLocateUser = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const { latitude, longitude } = pos.coords;
+      if (mapRef.current) {
+        mapRef.current.setCenter([latitude, longitude], 14, { duration: 1000 });
       }
-    );
+    });
   };
 
   return (
@@ -126,7 +173,6 @@ const MapSearch = () => {
                       setSelectedCity(loc.name);
                       setLocSearch(loc.name);
                       setShowLocDropdown(false);
-                      if (loc.lat && loc.lng) setUserLocation([Number(loc.lat), Number(loc.lng)]);
                     }}
                   >
                     <div className="font-bold text-gray-900 dark:text-white text-xs">{loc.name}</div>
@@ -139,10 +185,9 @@ const MapSearch = () => {
           <div className="flex gap-2">
             <button 
               onClick={handleLocateUser}
-              disabled={isLocating}
               className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
             >
-              {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+              <Navigation className="w-3 h-3" />
               Мой район
             </button>
             {selectedCity && (
@@ -157,11 +202,16 @@ const MapSearch = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Найдено рядом: {listings.length}</h2>
-          {listings.length > 0 ? listings.map((listing) => (
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Объявления рядом: {listings.length}</h2>
+          {loading ? (
+            <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+          ) : listings.length > 0 ? listings.map((listing) => (
             <div 
               key={listing.id} 
-              onClick={() => setSelectedListing(listing)}
+              onClick={() => {
+                setSelectedListing(listing);
+                // In a real app we might geocode here and center the map
+              }}
               className={`p-3 rounded-2xl border transition-all cursor-pointer ${
                 selectedListing?.id === listing.id 
                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md' 
@@ -173,9 +223,7 @@ const MapSearch = () => {
                   {listing.listing_images?.[0] ? (
                     <img src={listing.listing_images[0].url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs text-center p-2">
-                      📦 Нет фото
-                    </div>
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs text-center p-2">📦</div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -188,96 +236,18 @@ const MapSearch = () => {
               </div>
             </div>
           )) : (
-            <div className="text-center py-10 text-gray-400 italic">Пока нет объявлений в этом районе</div>
+            <div className="text-center py-10 text-gray-400 italic">Ничего не найдено</div>
           )}
         </div>
       </div>
 
       {/* Map Area */}
-      <div className="flex-1 relative h-full min-h-[400px]">
-        <MapContainer 
-          center={userLocation} 
-          zoom={13} 
-          zoomControl={false}
-          attributionControl={false}
-          style={{ height: '100%', width: '100%' }}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <ChangeView center={userLocation} />
-          
-          {listings.map((listing) => {
-            if (!listing.lat || !listing.lng) return null;
-            
-            return (
-              <Marker 
-                key={`marker-${listing.id}`} 
-                position={[Number(listing.lat), Number(listing.lng)]}
-                icon={selectedListing?.id === listing.id ? selectedIcon : defaultIcon}
-                eventHandlers={{
-                  click: () => setSelectedListing(listing),
-                }}
-              >
-                <Popup>
-                  <div className="min-w-48">
-                    <h3 className="font-bold text-sm mb-1">{listing.title}</h3>
-                    <p className="text-blue-600 font-black mb-2">{listing.price.toLocaleString()} ₽</p>
-                    <Link 
-                      to={`/listing/${listing.id}`}
-                      className="block text-center bg-blue-600 text-white py-1.5 rounded-lg text-xs font-bold"
-                    >
-                      Подробнее
-                    </Link>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
-        </MapContainer>
-
-        {/* Selected Listing Overlay (Mobile/Desktop Popup) */}
-        {selectedListing && (
-          <div className="absolute bottom-6 left-6 right-6 md:left-auto md:right-6 md:w-80 bg-white dark:bg-gray-900 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300 z-[1000]">
-            <button 
-              onClick={() => setSelectedListing(null)}
-              className="absolute top-2 right-2 p-1.5 bg-black/10 hover:bg-black/20 rounded-full dark:text-white z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex">
-              <div className="w-32 h-32 flex-shrink-0">
-                {selectedListing.listing_images?.[0] ? (
-                  <img src={selectedListing.listing_images[0].url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-2xl">📦</div>
-                )}
-              </div>
-              <div className="p-4 flex-1 min-w-0 flex flex-col justify-between">
-                <div>
-                  <h3 className="font-bold text-gray-900 dark:text-white truncate mb-1">{selectedListing.title}</h3>
-                  <p className="text-xl font-black text-blue-600">{selectedListing.price.toLocaleString()} ₽</p>
-                </div>
-                <Link 
-                  to={`/listing/${selectedListing.id}`}
-                  className="mt-2 block text-center text-xs font-bold text-white bg-blue-600 py-2 rounded-xl hover:bg-blue-700 transition-colors"
-                >
-                  Смотреть детали
-                </Link>
-              </div>
-            </div>
+      <div className="flex-1 relative h-full min-h-[400px]" id="yandex-map-container">
+        {!mapsReady && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-950 z-20">
+            <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
           </div>
         )}
-
-        {/* Map UI Elements */}
-        <div className="absolute top-6 right-6 flex flex-col gap-2 z-[1000]">
-          <button 
-            onClick={handleLocateUser}
-            className="p-3 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            {isLocating ? <Loader2 className="w-6 h-6 animate-spin text-blue-600" /> : <Navigation className="w-6 h-6" />}
-          </button>
-        </div>
       </div>
     </div>
   );
