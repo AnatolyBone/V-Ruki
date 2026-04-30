@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Listing, Category } from '../types/database';
+import { Listing, Category, Location } from '../types/database';
 import ListingCard from '../components/ListingCard';
 import { Search, ChevronRight, MapPin, Map as MapIcon, Sparkles } from 'lucide-react';
 import { DEFAULT_CATEGORIES } from '../constants/data';
-import { Location } from '../types/database';
 
 const Home = () => {
   const [listings, setListings] = useState<Listing[]>([]);
@@ -22,7 +21,6 @@ const Home = () => {
 
   useEffect(() => {
     const fetchInitialData = async () => {
-      // Fetch categories
       const { data: catData } = await supabase
         .from('categories')
         .select('*')
@@ -37,45 +35,49 @@ const Home = () => {
     fetchInitialData();
   }, []);
 
-  // Fetch listings with filters
   useEffect(() => {
     const fetchListings = async () => {
       setLoading(true);
-      let query = supabase
-        .from('listings')
-        .select('*, listing_images(*)')
-        .eq('status', 'active');
+      try {
+        let query = supabase
+          .from('listings')
+          .select('*, listing_images(*)')
+          .eq('status', 'active');
 
-      if (selectedCategoryId) {
-        query = query.eq('category_id', selectedCategoryId);
+        if (selectedCategoryId) {
+          query = query.eq('category_id', selectedCategoryId);
+        }
+
+        if (selectedCity) {
+          query = query.eq('city', selectedCity);
+        }
+
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .limit(40);
+
+        if (!error && data) {
+          setListings(data as Listing[]);
+        }
+      } catch (err) {
+        console.error('Filter error:', err);
+      } finally {
+        setLoading(false);
       }
-
-      if (selectedCity) {
-        query = query.eq('city', selectedCity);
-      }
-
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-      }
-
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!error && data) {
-        setListings(data as Listing[]);
-      }
-      setLoading(false);
     };
 
-    const timer = setTimeout(fetchListings, 300);
+    const timer = setTimeout(fetchListings, 400);
     return () => clearTimeout(timer);
   }, [searchQuery, selectedCategoryId, selectedCity]);
 
   // Fetch locations for dropdown
   useEffect(() => {
     const fetchLocs = async () => {
-      if (locSearch.length < 2) {
+      if (locSearch.length < 2 || locSearch === selectedCity) {
         setLocations([]);
         return;
       }
@@ -84,11 +86,11 @@ const Home = () => {
         .select('*')
         .ilike('name', `%${locSearch}%`)
         .limit(5);
-      if (data) setLocations(data);
+      if (data) setLocations(data as Location[]);
     };
     const timer = setTimeout(fetchLocs, 300);
     return () => clearTimeout(timer);
-  }, [locSearch]);
+  }, [locSearch, selectedCity]);
 
   return (
     <div className="pb-20">
@@ -103,7 +105,7 @@ const Home = () => {
             Покупайте и продавайте вещи выгодно и быстро.
           </p>
           
-          <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 p-2 rounded-2xl shadow-xl flex flex-col md:flex-row gap-2">
+          <div className="max-w-4xl mx-auto bg-white dark:bg-gray-900 p-2 rounded-2xl shadow-xl flex flex-col md:flex-row gap-2 relative">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input 
@@ -122,7 +124,7 @@ const Home = () => {
                   type="text"
                   placeholder="Город"
                   className="w-full pl-10 pr-10 py-3 rounded-xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-white dark:bg-gray-800"
-                  value={selectedCity || locSearch}
+                  value={locSearch}
                   onChange={(e) => {
                     setLocSearch(e.target.value);
                     if (selectedCity) setSelectedCity('');
@@ -139,7 +141,7 @@ const Home = () => {
               </div>
 
               {showLocDropdown && locations.length > 0 && (
-                <div className="absolute z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                <div className="absolute top-full left-0 z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
                   {locations.map((loc) => (
                     <button
                       key={loc.id}
@@ -168,37 +170,34 @@ const Home = () => {
       {/* Categories */}
       <section className="container mx-auto px-4 py-12 bg-white dark:bg-gray-950 transition-colors">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Категории</h2>
-          <button className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 hover:underline">
-            Все категории <ChevronRight className="w-4 h-4" />
-          </button>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Популярные категории</h2>
+          {categories.length === 0 && !loading && (
+            <p className="text-amber-600 text-sm italic">Категории не загружены.</p>
+          )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
           {categories.length > 0 ? categories.map((cat) => (
             <button 
               key={cat.id}
               onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? null : cat.id)}
-              className={`p-6 bg-white dark:bg-gray-900 border rounded-2xl flex flex-col items-center gap-3 transition-all text-center group ${
+              className={`p-6 rounded-3xl flex flex-col items-center gap-4 transition-all text-center ${
                 selectedCategoryId === cat.id 
-                  ? 'border-blue-600 dark:border-blue-500 ring-2 ring-blue-600/10 shadow-md' 
-                  : 'border-gray-100 dark:border-gray-800 hover:border-blue-200 dark:hover:border-blue-500 hover:shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 dark:shadow-none scale-105' 
+                  : 'bg-gray-50 dark:bg-gray-900 border border-transparent hover:border-blue-200 dark:hover:border-blue-800 hover:bg-white dark:hover:bg-gray-800 shadow-sm'
               }`}
             >
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors text-2xl ${
-                selectedCategoryId === cat.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none'
-                  : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 dark:group-hover:bg-blue-500 group-hover:text-white'
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${
+                selectedCategoryId === cat.id ? 'bg-white/20' : 'bg-white dark:bg-gray-800'
               }`}>
                 {cat.icon || '📦'}
               </div>
-              <span className={`font-bold text-sm ${
-                selectedCategoryId === cat.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+              <span className={`font-black text-sm uppercase tracking-wider ${
+                selectedCategoryId === cat.id ? 'text-white' : 'text-gray-900 dark:text-gray-100'
               }`}>{cat.name}</span>
             </button>
           )) : (
-            // Skeleton / Placeholder
             Array(6).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-2xl"></div>
+              <div key={i} className="h-40 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-3xl shadow-sm"></div>
             ))
           )}
         </div>
@@ -217,9 +216,9 @@ const Home = () => {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Вещи у соседей, которые можно забрать сегодня</p>
               </div>
             </div>
-            <button className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+            <Link to="/map" className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
               <MapIcon className="w-4 h-4" /> На карте
-            </button>
+            </Link>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -227,31 +226,15 @@ const Home = () => {
               <ListingCard key={`near-${listing.id}`} listing={listing} />
             ))}
           </div>
-          
-          <div className="mt-10 p-6 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-blue-200 dark:shadow-none">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl">
-                📍
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">Ищите по карте своего района</h3>
-                <p className="text-blue-100 opacity-90">Зачем ехать далеко? Самое интересное — за углом.</p>
-              </div>
-            </div>
-            <Link 
-              to="/map"
-              className="w-full md:w-auto px-8 py-3 bg-white text-blue-700 rounded-xl font-bold hover:bg-blue-50 transition-colors text-center"
-            >
-              Открыть карту
-            </Link>
-          </div>
         </div>
       </section>
 
       {/* Recent Listings */}
       <section className="container mx-auto px-4 py-12 bg-white dark:bg-gray-950 transition-colors">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Свежие объявления</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {searchQuery || selectedCity || selectedCategoryId ? 'Результаты поиска' : 'Свежие объявления'}
+          </h2>
           <button className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1 hover:underline">
             Смотреть все <ChevronRight className="w-4 h-4" />
           </button>
@@ -260,7 +243,7 @@ const Home = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {Array(8).fill(0).map((_, i) => (
-              <div key={i} className="aspect-[4/5] bg-gray-100 animate-pulse rounded-xl"></div>
+              <div key={i} className="aspect-[4/5] bg-gray-100 dark:bg-gray-800 animate-pulse rounded-xl"></div>
             ))}
           </div>
         ) : listings.length > 0 ? (
@@ -270,41 +253,23 @@ const Home = () => {
             ))}
           </div>
         ) : (
-          <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
-            <p className="text-gray-500">Пока нет активных объявлений. Будьте первыми!</p>
-            <Link to="/listings/new" className="mt-4 inline-block text-blue-600 font-bold">
-              Подать объявление
-            </Link>
+          <div className="text-center py-20 bg-white dark:bg-gray-900 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-800">
+            <p className="text-gray-500">Ничего не найдено по вашему запросу.</p>
+            {(searchQuery || selectedCity || selectedCategoryId) && (
+              <button 
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCity('');
+                  setLocSearch('');
+                  setSelectedCategoryId(null);
+                }}
+                className="mt-4 text-blue-600 font-bold"
+              >
+                Сбросить фильтры
+              </button>
+            )}
           </div>
         )}
-      </section>
-
-      {/* Promotional Banner */}
-      <section className="container mx-auto px-4 py-12">
-        <div className="bg-gradient-to-r from-gray-900 to-blue-900 rounded-3xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-8 text-white">
-          <div className="max-w-xl">
-            <h2 className="text-3xl font-bold mb-4">ВРуки — это бесплатно</h2>
-            <p className="text-gray-300 text-lg mb-6">
-              Никаких скрытых комиссий и ограничений. Размещайте свои предложения на v-ruki.ru и находите покупателей сегодня.
-            </p>
-            <Link 
-              to="/register" 
-              className="bg-white text-blue-900 px-8 py-3 rounded-xl font-bold hover:bg-gray-100 transition-colors inline-block"
-            >
-              Начать сейчас
-            </Link>
-          </div>
-          <div className="hidden lg:block w-1/3">
-            <div className="relative">
-              <div className="absolute -inset-4 bg-blue-500/20 blur-3xl rounded-full"></div>
-              <img 
-                src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=400" 
-                alt="Safe shopping"
-                className="relative rounded-2xl shadow-2xl rotate-3"
-              />
-            </div>
-          </div>
-        </div>
       </section>
     </div>
   );
