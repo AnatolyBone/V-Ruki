@@ -109,12 +109,9 @@ const EditListing = () => {
         setSelectedLoc({
           id: 'existing',
           name: typedListing.city,
-          lat: typedListing.lat,
-          lng: typedListing.lng,
-          region: null,
-          type: 'city',
+          region: typedListing.region || null,
           created_at: '',
-        });
+        } as Location);
       } catch (err: any) {
         console.error('Error fetching data:', err);
         setError('Не удалось загрузить данные объявления.');
@@ -208,9 +205,8 @@ const EditListing = () => {
           description: formData.description,
           price: parseFloat(formData.price),
           city: selectedLoc.name,
+          region: selectedLoc.region,
           address: formData.address,
-          lat: selectedLoc.lat,
-          lng: selectedLoc.lng,
           category_id: formData.category_id,
           status: 'moderation',
           updated_at: new Date().toISOString()
