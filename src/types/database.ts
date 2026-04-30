@@ -39,8 +39,6 @@ export type Location = {
   name: string;
   region: string | null;
   type: string;
-  lat: number | null;
-  lng: number | null;
   created_at: string;
 };
 
@@ -52,9 +50,8 @@ export type Listing = {
   price: number;
   category_id: string;
   city: string;
+  region: string | null;
   address: string | null;
-  lat: number | null;
-  lng: number | null;
   status: ListingStatus;
   created_at: string;
   updated_at: string;
