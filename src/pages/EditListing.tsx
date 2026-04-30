@@ -28,7 +28,6 @@ const EditListing = () => {
     price: '',
     category_id: '',
     city: '',
-    region: '',
     address: '',
   });
 
@@ -181,7 +180,6 @@ const EditListing = () => {
           description: formData.description.trim(),
           price: parseFloat(formData.price),
           city: formData.city.trim(),
-          region: formData.region.trim(),
           address: formData.address.trim(),
           category_id: formData.category_id,
           status: 'moderation',
